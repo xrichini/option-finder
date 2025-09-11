@@ -1,19 +1,16 @@
 # config.py
-import os
-from dotenv import load_dotenv
-
-load_dotenv()
+import streamlit as st
 
 
 class Config:
-    TRADIER_API_KEY = os.getenv('TRADIER_API_KEY')
-    TRADIER_BASE_URL = 'https://api.tradier.com/v1'
-    OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
-    PERPLEXITY_API_KEY = os.getenv('PERPLEXITY_API_KEY')
+    TRADIER_API_KEY = st.secrets.get("TRADIER_API_KEY")
+    TRADIER_BASE_URL = "https://api.tradier.com/v1"
+    OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY")
+    PERPLEXITY_API_KEY = st.secrets.get("PERPLEXITY_API_KEY")
 
     # Paramètres de screening configurables
     DEFAULT_DTE = 7  # Days To Expiration par défaut
-    MAX_DTE = 45    # DTE maximum
+    MAX_DTE = 45  # DTE maximum
     MIN_VOLUME_THRESHOLD = 1000
     MIN_OPEN_INTEREST_THRESHOLD = 500
     VOLUME_OI_RATIO_THRESHOLD = 2.0
