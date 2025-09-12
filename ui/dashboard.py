@@ -5,45 +5,61 @@ import pandas as pd
 from data.screener_logic import OptionsScreener
 from utils.config import Config
 from data.async_tradier import AsyncTradierClient
+from utils.async_utils import (
+    run_async_in_streamlit, 
+    safe_async_run_with_fallback,
+    cleanup_session_async_resources
+)
 import asyncio
-import nest_asyncio
+import time
+import atexit
+from typing import Optional
 
 
 class OptionsDashboard:
     def __init__(self):
         self.screener = OptionsScreener()
-        self.tradier = AsyncTradierClient()
+        self.tradier = self._get_or_create_async_client()
         self._init_session_state()
+        
+        # Register cleanup for graceful shutdown
+        atexit.register(self._cleanup_async_resources)
+    
+    def _get_or_create_async_client(self) -> AsyncTradierClient:
+        """Get existing async client or create new one with proper session management"""
+        if 'async_tradier_client' not in st.session_state:
+            st.session_state.async_tradier_client = AsyncTradierClient()
+        return st.session_state.async_tradier_client
+    
+    def _cleanup_async_resources(self):
+        """Clean up async resources gracefully"""
+        try:
+            # Use the centralized cleanup utility
+            cleanup_session_async_resources()
+        except Exception as e:
+            print(f"Warning: Error cleaning up async resources: {e}")
 
     def _init_session_state(self):
-        """Initialise les variables de session"""
+        """Initialise les variables de session sans écraser les valeurs existantes"""
+        # Initialize symbols lists only if they don't exist
         if "raw_symbols" not in st.session_state:
             st.session_state.raw_symbols = []
 
         if "optionable_symbols" not in st.session_state:
             st.session_state.optionable_symbols = []
 
-        # Paramètres scanner
-        if "max_dte" not in st.session_state:
-            st.session_state.max_dte = Config.DEFAULT_DTE
-
-        if "min_volume" not in st.session_state:
-            st.session_state.min_volume = Config.MIN_VOLUME_THRESHOLD
-
-        if "min_oi" not in st.session_state:
-            st.session_state.min_oi = Config.MIN_OPEN_INTEREST_THRESHOLD
-
-        if "min_whale_score" not in st.session_state:
-            st.session_state.min_whale_score = Config.MIN_WHALE_SCORE
+        # Paramètres scanner - utiliser setdefault pour éviter d'écraser
+        st.session_state.setdefault("max_dte", Config.DEFAULT_DTE)
+        st.session_state.setdefault("min_volume", Config.MIN_VOLUME_THRESHOLD)
+        st.session_state.setdefault("min_oi", Config.MIN_OPEN_INTEREST_THRESHOLD)
+        st.session_state.setdefault("min_whale_score", Config.MIN_WHALE_SCORE)
+        
+        # Initialize other necessary state variables
+        st.session_state.setdefault("enable_prefiltering", True)
+        st.session_state.setdefault("min_market_cap", 100_000_000)
+        st.session_state.setdefault("min_stock_volume", 500_000)
 
     def run(self):
-        st.set_page_config(
-            page_title="🐋 Options Whale Screener",
-            page_icon="🐋",
-            layout="wide",
-            initial_sidebar_state="expanded",
-        )
-
         # Header avec style
         st.markdown(
             """
@@ -63,6 +79,9 @@ class OptionsDashboard:
 
         # Sidebar configuration
         self.render_sidebar()
+        
+        # Main controls section
+        self.render_main_controls()
 
         # Onglets principaux
         tab1, tab2 = st.tabs(["📈 Big Calls", "📉 Big Puts"])
@@ -77,142 +96,161 @@ class OptionsDashboard:
             self.render_options_tab("puts")
 
     def render_sidebar(self):
-        """Affiche et gère la barre latérale"""
+        """Affiche et gère la barre latérale simplifiée"""
         st.sidebar.markdown("## ⚙️ Configuration")
-        self._render_symbol_section()
         self._render_scanner_params()
         self.render_sidebar_buttons()
 
     def _render_scanner_params(self):
-        """Affiche les paramètres de scan dans la sidebar"""
-        st.sidebar.markdown("### 🔍 Paramètres du scanner")
-
-        # Paramètres de scan
+        """Affiche les paramètres essentiels du scanner"""
+        st.sidebar.markdown("### 🔍 Paramètres")
+        
+        # Market filtering parameters
+        st.sidebar.markdown("**Filtrage des symboles**")
+        st.session_state.min_market_cap = st.sidebar.selectbox(
+            "Capitalisation minimum",
+            options=[50_000_000, 100_000_000, 500_000_000, 1_000_000_000],
+            index=1,
+            format_func=lambda x: f"{x/1_000_000:,.0f}M $"
+        )
+        
+        st.session_state.min_stock_volume = st.sidebar.selectbox(
+            "Volume stock minimum",
+            options=[100_000, 500_000, 1_000_000, 2_000_000],
+            index=1,
+            format_func=lambda x: f"{x/1_000:,.0f}K"
+        )
+        
+        # Set prefiltering to always True
+        st.session_state.enable_prefiltering = True
+        
+        st.sidebar.markdown("**Options scanning**")
+        # Essential options scanning parameters
         st.session_state.min_volume = st.sidebar.number_input(
-            "Volume minimum",
-            min_value=0,
+            "📈 Volume option minimum",
+            min_value=500,
             max_value=10000,
             value=int(Config.MIN_VOLUME_THRESHOLD),
             step=100,
-        )
-
-        st.session_state.min_oi = st.sidebar.number_input(
-            "Open Interest minimum",
-            min_value=0,
-            max_value=10000,
-            value=int(Config.MIN_OPEN_INTEREST_THRESHOLD),
-            step=100,
-        )
-
-        st.session_state.max_dte = st.sidebar.slider(
-            "DTE maximum",
-            min_value=1,
-            max_value=30,
-            value=int(Config.DEFAULT_DTE),
-            step=1,
+            help="Volume minimum requis pour détecter une option"
         )
 
         st.session_state.min_whale_score = st.sidebar.slider(
-            "Score Whale minimum",
-            min_value=50,
-            max_value=100,
+            "🐋 Score Whale minimum",
+            min_value=60,
+            max_value=95,
             value=int(Config.MIN_WHALE_SCORE),
             step=5,
+            help="Score minimum pour considérer une option comme 'whale activity'"
         )
+        
+        # Additional scanning parameters (now directly in main section, not in expander)
+        st.session_state.min_oi = Config.MIN_OPEN_INTEREST_THRESHOLD
+        st.session_state.max_dte = Config.DEFAULT_DTE
 
-    def _render_symbol_section(self):
-        """Affiche et gère la section des symboles"""
-        st.sidebar.markdown("### 📋 Liste des symboles")
-
-        # Symboles par défaut
-        default_symbols = ""
-
-        # Utilise les symboles filtrés s'ils existent, sinon les symboles bruts
-        if "optionable_symbols" in st.session_state:
-            current_symbols = st.session_state.optionable_symbols
-        else:
-            current_symbols = st.session_state.get("raw_symbols", [])
-
-        current_text = (
-            "\n".join(current_symbols) if current_symbols else default_symbols
-        )
-
-        symbols_input = st.sidebar.text_area(
-            "Symboles (un par ligne)",
-            value=current_text,
-            height=120,
-        )
-
-        # Met à jour la session si nécessaire
-        if symbols_input != current_text:
-            raw_symbols = [
-                s.strip().upper() for s in symbols_input.split("\n") if s.strip()
-            ]
-            st.session_state.raw_symbols = raw_symbols
-            if "optionable_symbols" in st.session_state:
-                del st.session_state.optionable_symbols
-
-            # Vérifie les options disponibles pour les nouveaux symboles
-            if raw_symbols:
-                self._check_optionable_symbols()
-
-        # Vérifie les options si pas encore fait
-        elif "optionable_symbols" not in st.session_state and current_symbols:
-            self._check_optionable_symbols()
-
-    async def _async_check_symbols(self, symbols):
-        """Vérifie les symboles de manière asynchrone"""
-        return await self.tradier.filter_optionable_symbols(symbols)
-
-    def _check_optionable_symbols(self):
-        """Vérifie et affiche les symboles avec options disponibles"""
-        if not hasattr(st.session_state, "raw_symbols"):
-            return
-
-        progress_text = st.sidebar.empty()
-        progress_text.text("Vérification des options disponibles...")
-
-        raw_symbols = st.session_state.raw_symbols
-        if not raw_symbols:
-            progress_text.warning("⚠️ Aucun symbole à vérifier")
-            return
-
-        # Vérifie les options disponibles
-        optionable = asyncio.run(self._async_check_symbols(raw_symbols))
-
-        # Met à jour la session avec les symboles filtrés
-        st.session_state.optionable_symbols = optionable
-
-        # Affiche le résultat
-        message = (
-            f"✅ {len(optionable)} symboles avec options sur "
-            f"{len(raw_symbols)} total"
-        )
-        progress_text.success(message)
 
     def render_sidebar_buttons(self):
-        """Affiche les boutons de scan et clear"""
-        st.sidebar.markdown("### 🔄 Actions")
-        col1, col2 = st.sidebar.columns(2)
-
-        with col1:
-            scan_button = st.button(
-                "🔄 SCANNER", type="primary", width="stretch", key="scan_main"
+        """Affiche seulement l'état et les paramètres dans la sidebar"""
+        # Informations sur l'état actuel
+        optionable_symbols = st.session_state.get('optionable_symbols', [])
+        
+        if optionable_symbols:
+            st.sidebar.success(
+                f"✅ **{len(optionable_symbols)}** symboles chargés\n\n"
+                "📈 Utilisez les contrôles de la page principale"
             )
-
+            
+            # Debug info in collapsible expander
+            with st.sidebar.expander("🔍 Debug Info", expanded=False):
+                raw_symbols = st.session_state.get('raw_symbols', [])
+                st.write(f"Raw: {len(raw_symbols)}, Optionable: {len(optionable_symbols)}")
+                st.write(f"Samples: {optionable_symbols[:3] if optionable_symbols else 'None'}")
+        else:
+            st.sidebar.info(
+                "📝 **Configuration uniquement**\n\n"
+                "Les contrôles principaux sont sur la page principale"
+            )
+    
+    def render_main_controls(self):
+        """Affiche les contrôles principaux sur la page principale"""
+        st.markdown("## 🎯 Contrôles")
+        
+        # Status and load section
+        col1, col2, col3 = st.columns([2, 1, 1])
+        
+        with col1:
+            # Display current status
+            optionable_symbols = st.session_state.get('optionable_symbols', [])
+            if optionable_symbols:
+                st.success(f"✅ **{len(optionable_symbols)} symboles** prêts pour le screening")
+            else:
+                st.info("💭 Chargez des symboles depuis HighShortInterest.com")
+        
         with col2:
-            if st.button("🧹 Clear", width="stretch", key="clear_main"):
-                # Nettoie les résultats
-                if "calls_results" in st.session_state:
-                    del st.session_state.calls_results
-                if "puts_results" in st.session_state:
-                    del st.session_state.puts_results
+            # Load symbols button
+            if st.button("🚀 Charger Symboles", type="primary", use_container_width=True, key="main_load_btn"):
+                self._load_symbols_main()
+        
+        with col3:
+            # Clear all button
+            if st.button("🧹 Clear All", use_container_width=True, key="main_clear_btn"):
+                self._clear_all_data()
+        
+        st.divider()
+    
+    def _load_symbols_main(self):
+        """Charge les symboles depuis la page principale"""
+        from utils.helpers import get_high_short_interest_symbols
+        
+        # Get parameters
+        enable_prefiltering = st.session_state.get('enable_prefiltering', True)
+        min_market_cap = st.session_state.get('min_market_cap', 100_000_000)
+        min_stock_volume = st.session_state.get('min_stock_volume', 500_000)
+        
+        try:
+            # Show loading message
+            with st.spinner("📡 Chargement des symboles depuis HighShortInterest.com..."):
+                # Load symbols
+                symbols = get_high_short_interest_symbols(
+                    enable_prefiltering=enable_prefiltering,
+                    min_market_cap=min_market_cap,
+                    min_avg_volume=min_stock_volume
+                )
+            
+            if symbols:
+                # Save to session state
+                st.session_state.raw_symbols = symbols
+                st.session_state.optionable_symbols = symbols
+                st.session_state.symbols_loaded = True
+                st.session_state.symbols_count = len(symbols)
+                st.session_state.last_load_time = time.time()
+                
+                st.success(f"✅ **{len(symbols)} symboles** chargés avec succès!")
                 st.rerun()
-
-        if scan_button:
-            tab_id = st.session_state.get("active_tab", "calls")
-            st.session_state.trigger_scan = tab_id
-            st.rerun()
+            else:
+                st.error("❌ Aucun symbole trouvé - la fonction a retourné une liste vide")
+                
+        except Exception as e:
+            st.error(f"❌ Erreur lors du chargement: {str(e)}")
+            import traceback
+            st.code(traceback.format_exc())
+    
+    def _clear_all_data(self):
+        """Efface toutes les données"""
+        # Clear symbols
+        cleanup_keys = [
+            "raw_symbols", "optionable_symbols", "symbols_loaded", 
+            "symbols_count", "last_load_time",
+            "calls_results", "puts_results",
+            "trigger_scan", "is_scanning", "stop_scanning"
+        ]
+        
+        for key in cleanup_keys:
+            if key in st.session_state:
+                del st.session_state[key]
+        
+        st.success("✅ Toutes les données ont été effacées")
+        st.rerun()
 
     def render_options_tab(self, option_type: str):
         """Affiche les opportunités d'options (calls ou puts)"""
@@ -223,9 +261,27 @@ class OptionsDashboard:
         # Enregistre l'onglet actif
         st.session_state.active_tab = option_type
 
-        # Vérifier si un scan est demandé pour cet onglet
+        # Vérifier si un scan est demandé pour cet onglet spécifique
         has_trigger = st.session_state.get("trigger_scan") == option_type
-        should_scan = has_trigger
+        is_scanning = st.session_state.get("is_scanning", False)
+        scan_requested_tab = st.session_state.get("scan_requested_tab")
+        current_scan_type = st.session_state.get("scan_option_type")
+        
+        # Only this tab should handle scanning if:
+        # 1. It was triggered for this option type AND not already scanning
+        # 2. OR it's currently scanning for this option type
+        should_scan = has_trigger and not is_scanning
+        is_my_scan = is_scanning and current_scan_type == option_type
+
+        # Only show scanning progress if this tab is handling the scan
+        if is_scanning and current_scan_type == option_type:
+            self._render_scanning_progress(option_type)
+            return
+        elif is_scanning and current_scan_type != option_type:
+            # Different tab is scanning, just show a message
+            st.info(f"🔍 Un scan {current_scan_type} est en cours dans l'autre onglet...")
+            self._render_results_section(option_type)
+            return
 
         if should_scan:
             if (
@@ -233,50 +289,481 @@ class OptionsDashboard:
                 or not st.session_state.optionable_symbols
             ):
                 st.warning("⚠️ Aucun symbole avec options disponible")
-                st.session_state.trigger_scan = False
+                st.session_state.trigger_scan = None  # Reset the trigger
+                # Continue to render results section even if no symbols
+                self._render_results_section(option_type)
                 return
 
-            progress_text = st.empty()
-            progress_text.text("🔍 Initialisation du scan...")
+            # Interface de progression améliorée
+            progress_container = st.container()
+            
+            with progress_container:
+                st.markdown("### 🔍 Scan en cours...")
+                
+                # Barre de progression principale
+                main_progress = st.progress(0)
+                status_text = st.empty()
+                
+                # Métriques en temps réel avec containers
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    symbols_container = st.empty()
+                with col2:
+                    options_container = st.empty()
+                with col3:
+                    time_container = st.empty()
+                
+                # Initialisation des métriques
+                symbols_container.metric("Symboles analysés", "0")
+                options_container.metric("Options trouvées", "0")
+                time_container.metric("Temps écoulé", "0s")
+                
+                # Container pour les détails de progression
+                details_expander = st.expander("🔍 Détails du scan", expanded=True)
+                details_text = details_expander.empty()
+                
+                # Bouton d'interruption
+                col_stop1, col_stop2, col_stop3 = st.columns([1, 1, 1])
+                with col_stop2:
+                    stop_button = st.button("🛑 Interrompre le scan", type="secondary", use_container_width=True)
+                    if stop_button:
+                        st.session_state.stop_scanning = True
+
+            # Variables pour le suivi
+            symbols_to_process = st.session_state.optionable_symbols
+            total_symbols = len(symbols_to_process)
+            start_time = time.time()
+            processed_symbols = 0
+            total_options_found = 0
+            last_update_time = 0
+            update_interval = 0.5  # Mise à jour toutes les 500ms minimum
+            
+            def update_progress(symbol_idx, symbol_name, options_found, current_details=""):
+                nonlocal processed_symbols, total_options_found, last_update_time
+                processed_symbols = symbol_idx + 1
+                total_options_found += options_found
+                
+                current_time = time.time()
+                elapsed_time = current_time - start_time
+                
+                # Throttling: ne pas mettre à jour trop souvent
+                should_update = (
+                    current_time - last_update_time >= update_interval or
+                    processed_symbols == 1 or  # Première mise à jour
+                    processed_symbols == total_symbols  # Dernière mise à jour
+                )
+                
+                if should_update:
+                    # Calcul du progrès
+                    progress = processed_symbols / total_symbols
+                    
+                    # Mise à jour des éléments UI avec force refresh
+                    main_progress.progress(progress)
+                    status_text.text(f"Analyse {symbol_name}... ({processed_symbols}/{total_symbols})")
+                    
+                    # Mise à jour des métriques
+                    symbols_container.metric("Symboles analysés", f"{processed_symbols}/{total_symbols}")
+                    options_container.metric("Options trouvées", str(total_options_found))
+                    time_container.metric("Temps écoulé", f"{elapsed_time:.1f}s")
+                    
+                    last_update_time = current_time
+                
+                # Détails actuels (mis à jour plus fréquemment pour le feedback)
+                if current_details:
+                    details_text.text(f"[{symbol_idx+1}/{total_symbols}] {current_details}")
+                    
+                # Stocker l'état dans session_state pour le débug
+                st.session_state.debug_progress = {
+                    'processed': processed_symbols,
+                    'total': total_symbols,
+                    'options_found': total_options_found,
+                    'current_symbol': symbol_name,
+                    'details': current_details,
+                    'elapsed': elapsed_time
+                }
 
             try:
-                # Sélectionne la méthode de scan appropriée
-                screen_method = (
-                    self.screener.screen_big_calls
-                    if option_type == "calls"
-                    else self.screener.screen_big_puts
-                )
-
-                results = screen_method(
-                    symbols=st.session_state.optionable_symbols,
-                    max_dte=st.session_state.max_dte,
-                    min_volume=st.session_state.min_volume,
-                    min_oi=st.session_state.min_oi,
-                    min_whale_score=st.session_state.min_whale_score,
-                )
-
-                if results:
-                    progress_text.success("✅ Scan terminé avec succès!")
-                    # Stocke les résultats dans la variable appropriée
-                    results_key = f"{option_type}_results"
-                    st.session_state[results_key] = results
-                else:
-                    progress_text.warning("⚠️ Aucune opportunité trouvée")
+                # Initialiser le scanning par chunks
+                st.session_state.is_scanning = True
+                st.session_state.scan_option_type = option_type
+                st.session_state.symbols_to_scan = symbols_to_process
+                st.session_state.current_scan_index = 0
+                st.session_state.scan_results = []
+                st.session_state.scan_start_time = time.time()
+                st.session_state.stop_scanning = False
+                st.session_state.trigger_scan = None  # Reset trigger after starting scan
+                
+                status_text.text("🚀 Initialisation du scan...")
+                st.rerun()  # Relancer pour démarrer la progression
 
             except Exception as e:
-                progress_text.error(f"❌ Erreur pendant le scan: {str(e)}")
-                results_key = f"{option_type}_results"
-                st.session_state[results_key] = []
-            finally:
+                st.error(f"❌ Erreur pendant l'initialisation du scan: {str(e)}")
+                st.session_state.is_scanning = False
+                st.session_state.trigger_scan = None
+                st.session_state.pop('scan_option_type', None)
+        
+        # Render results section when not scanning or not my scan or not starting scan
+        if not should_scan and (not is_scanning or current_scan_type != option_type):
+            self._render_results_section(option_type)
+    
+    def _run_enhanced_screening(self, option_type, symbols, progress_callback=None):
+        """Exécute le screening avec progression en temps réel"""
+        all_results = []
+        
+        for idx, symbol in enumerate(symbols):
+            # Vérifier si l'utilisateur a demandé l'interruption
+            if st.session_state.get('stop_scanning', False):
+                if progress_callback:
+                    progress_callback(idx, symbol, 0, "⚠️ Scan interrompu par l'utilisateur")
+                break
+                
+            try:
+                # Callback de progression
+                if progress_callback:
+                    progress_callback(
+                        idx, 
+                        symbol, 
+                        0,  # Pas encore d'options trouvées
+                        f"🔍 Analyse {symbol}..."
+                    )
+                
+                # Obtenir les expirations
+                expirations = self.screener.client.get_option_expirations(symbol)
+                if not expirations:
+                    if progress_callback:
+                        progress_callback(idx, symbol, 0, f"⚠️ {symbol}: Pas d'expirations")
+                    continue
+                
+                # Filtrer par DTE
+                filtered_exps = self.screener.client.filter_expirations_by_dte(
+                    expirations, st.session_state.max_dte
+                )
+                
+                if not filtered_exps:
+                    if progress_callback:
+                        progress_callback(
+                            idx, symbol, 0, 
+                            f"⚠️ {symbol}: Pas d'expirations < {st.session_state.max_dte} DTE"
+                        )
+                    continue
+                
+                if progress_callback:
+                    progress_callback(
+                        idx, symbol, 0,
+                        f"📅 {symbol}: Analyse de {len(filtered_exps)} expirations..."
+                    )
+                
+                symbol_results = []
+                
+                # Analyser chaque expiration
+                for exp_idx, expiration in enumerate(filtered_exps):
+                    try:
+                        if progress_callback:
+                            progress_callback(
+                                idx, symbol, len(symbol_results),
+                                f"📅 {symbol}: Expiration {exp_idx+1}/{len(filtered_exps)} ({expiration})"
+                            )
+                        
+                        # Récupérer les chaînes d'options
+                        chain_data = self.screener.client.get_option_chains(symbol, expiration)
+                        if not chain_data:
+                            continue
+                        
+                        # Filtrer les options
+                        options = [
+                            opt for opt in chain_data
+                            if (opt["option_type"].lower() == option_type
+                                and opt["volume"] >= st.session_state.min_volume
+                                and opt["open_interest"] >= st.session_state.min_oi)
+                        ]
+                        
+                        if progress_callback:
+                            progress_callback(
+                                idx, symbol, len(symbol_results),
+                                f"⚙️ {symbol}: {len(options)} options qualifiées pour {expiration}"
+                            )
+                        
+                        # Analyser chaque option
+                        for opt in options:
+                            try:
+                                result = self.screener._process_option(
+                                    opt, symbol, option_type, st.session_state.min_whale_score
+                                )
+                                if result:
+                                    symbol_results.append(result)
+                                    
+                                    if progress_callback:
+                                        progress_callback(
+                                            idx, symbol, len(symbol_results),
+                                            f"✅ {symbol}: Option qualifiée! Score: {result.whale_score:.0f}"
+                                        )
+                            
+                            except Exception as e:
+                                if progress_callback:
+                                    progress_callback(
+                                        idx, symbol, len(symbol_results),
+                                        f"❌ {symbol}: Erreur option - {str(e)[:50]}..."
+                                    )
+                                continue
+                                
+                    except Exception as e:
+                        if progress_callback:
+                            progress_callback(
+                                idx, symbol, len(symbol_results),
+                                f"❌ {symbol}: Erreur expiration - {str(e)[:50]}..."
+                            )
+                        continue
+                
+                # Ajouter les résultats du symbole
+                if symbol_results:
+                    all_results.extend(symbol_results)
+                    if progress_callback:
+                        progress_callback(
+                            idx, symbol, len(symbol_results),
+                            f"✨ {symbol}: {len(symbol_results)} options ajoutées (Total: {len(all_results)})"
+                        )
+                else:
+                    if progress_callback:
+                        progress_callback(
+                            idx, symbol, 0,
+                            f"🚫 {symbol}: Aucune option qualifiée"
+                        )
+                        
+            except Exception as e:
+                if progress_callback:
+                    progress_callback(
+                        idx, symbol, 0,
+                        f"❌ {symbol}: Erreur générale - {str(e)[:50]}..."
+                    )
+                continue
+        
+        # Trier par whale score
+        return sorted(all_results, key=lambda x: x.whale_score, reverse=True)
+    
+    def _render_scanning_progress(self, option_type: str):
+        """Affiche la progression du scan en cours et traite le prochain chunk"""
+        if not st.session_state.get('is_scanning', False):
+            return
+            
+        # Récupérer l'état du scan
+        symbols_to_scan = st.session_state.get('symbols_to_scan', [])
+        current_index = st.session_state.get('current_scan_index', 0)
+        scan_results = st.session_state.get('scan_results', [])
+        start_time = st.session_state.get('scan_start_time', time.time())
+        
+        total_symbols = len(symbols_to_scan)
+        
+        # Interface de progression
+        st.markdown("### 🔍 Scan en cours...")
+        
+        # Barre de progression
+        progress = current_index / total_symbols if total_symbols > 0 else 0
+        main_progress = st.progress(progress)
+        
+        # Métriques
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Symboles analysés", f"{current_index}/{total_symbols}")
+        with col2:
+            st.metric("Options trouvées", str(len(scan_results)))
+        with col3:
+            elapsed = time.time() - start_time
+            st.metric("Temps écoulé", f"{elapsed:.1f}s")
+        
+        # Bouton d'interruption
+        col_stop1, col_stop2, col_stop3 = st.columns([1, 1, 1])
+        with col_stop2:
+            if st.button("🛑 Interrompre le scan", type="secondary", use_container_width=True):
+                # Arrêter complètement le scan
+                st.session_state.stop_scanning = True
+                st.session_state.is_scanning = False
                 st.session_state.trigger_scan = False
-
-        # Affiche les résultats
+                
+                # Nettoyer immédiatement les variables de scan
+                cleanup_keys = ['symbols_to_scan', 'current_scan_index', 'scan_results', 
+                               'scan_start_time', 'scan_option_type', 'stop_scanning']
+                for key in cleanup_keys:
+                    if key in st.session_state:
+                        del st.session_state[key]
+                
+                st.warning("⚠️ Scan interrompu par l'utilisateur")
+                st.rerun()
+        
+        # Vérifier si le scan est terminé ou interrompu
+        if current_index >= total_symbols or st.session_state.get('stop_scanning', False):
+            # Scan terminé
+            st.session_state.is_scanning = False
+            st.session_state.trigger_scan = False
+            
+            final_time = time.time() - start_time
+            
+            # Sauvegarder les résultats seulement si le scan n'a pas été interrompu
+            if not st.session_state.get('stop_scanning', False):
+                results_key = f"{option_type}_results"
+                st.session_state[results_key] = scan_results
+                
+                if scan_results:
+                    st.success(f"✅ Scan terminé! {len(scan_results)} opportunités trouvées en {final_time:.1f}s")
+                else:
+                    st.warning(f"⚠️ Aucune opportunité trouvée (scan terminé en {final_time:.1f}s)")
+            
+            # Nettoyer les variables de session
+            cleanup_keys = ['symbols_to_scan', 'current_scan_index', 'scan_results', 
+                           'scan_start_time', 'scan_option_type', 'stop_scanning']
+            for key in cleanup_keys:
+                if key in st.session_state:
+                    del st.session_state[key]
+            
+            st.rerun()
+            return
+        
+        # Traiter le prochain symbole
+        if current_index < total_symbols:
+            current_symbol = symbols_to_scan[current_index]
+            st.text(f"Analyse {current_symbol}... ({current_index + 1}/{total_symbols})")
+            
+            # Détails en temps réel
+            with st.expander("🔍 Détails", expanded=True):
+                detail_placeholder = st.empty()
+                detail_placeholder.text(f"🔍 Analyse {current_symbol} en cours...")
+            
+            # Traiter ce symbole
+            try:
+                symbol_results = self._process_single_symbol(
+                    current_symbol, 
+                    option_type, 
+                    detail_placeholder
+                )
+                
+                if symbol_results:
+                    scan_results.extend(symbol_results)
+                    st.session_state.scan_results = scan_results
+                    detail_placeholder.success(f"✅ {current_symbol}: {len(symbol_results)} options ajoutées")
+                else:
+                    detail_placeholder.info(f"🚫 {current_symbol}: Aucune option qualifiée")
+                    
+            except Exception as e:
+                detail_placeholder.error(f"❌ {current_symbol}: Erreur - {str(e)[:100]}...")
+            
+            # Passer au symbole suivant
+            st.session_state.current_scan_index = current_index + 1
+            
+            # Vérifier si l'arrêt a été demandé pendant le traitement
+            if st.session_state.get('stop_scanning', False) or not st.session_state.get('is_scanning', False):
+                return  # Ne pas continuer si arrêt demandé
+            
+            # Petit délai pour permettre à l'utilisateur de voir la progression
+            time.sleep(0.1)
+            
+            # Relancer pour le prochain symbole seulement si le scan est toujours actif
+            if st.session_state.get('is_scanning', False):
+                st.rerun()
+    
+    def _process_single_symbol(self, symbol: str, option_type: str, detail_placeholder=None):
+        """Traite un seul symbole et retourne les résultats"""
+        try:
+            if detail_placeholder:
+                detail_placeholder.text(f"📅 {symbol}: Récupération des expirations...")
+            
+            # Obtenir les expirations
+            expirations = self.screener.client.get_option_expirations(symbol)
+            if not expirations:
+                return []
+                
+            # Filtrer par DTE
+            filtered_exps = self.screener.client.filter_expirations_by_dte(
+                expirations, st.session_state.max_dte
+            )
+            
+            if not filtered_exps:
+                return []
+            
+            if detail_placeholder:
+                detail_placeholder.text(f"📅 {symbol}: Analyse de {len(filtered_exps)} expirations...")
+            
+            symbol_results = []
+            
+            # Analyser chaque expiration
+            for exp_idx, expiration in enumerate(filtered_exps):
+                try:
+                    if detail_placeholder:
+                        detail_placeholder.text(f"⚙️ {symbol}: Expiration {exp_idx+1}/{len(filtered_exps)} ({expiration})")
+                    
+                    # Récupérer les chaînes d'options
+                    chain_data = self.screener.client.get_option_chains(symbol, expiration)
+                    if not chain_data:
+                        continue
+                    
+                    # Filtrer les options
+                    options = [
+                        opt for opt in chain_data
+                        if (opt["option_type"].lower() == option_type
+                            and opt["volume"] >= st.session_state.min_volume
+                            and opt["open_interest"] >= st.session_state.min_oi)
+                    ]
+                    
+                    if detail_placeholder:
+                        detail_placeholder.text(f"⚙️ {symbol}: {len(options)} options qualifiées pour {expiration}")
+                    
+                    # Analyser chaque option
+                    for opt in options:
+                        try:
+                            result = self.screener._process_option(
+                                opt, symbol, option_type, st.session_state.min_whale_score
+                            )
+                            if result:
+                                symbol_results.append(result)
+                        except Exception:
+                            continue
+                            
+                except Exception:
+                    continue
+                    
+            return symbol_results
+            
+        except Exception:
+            return []
+    
+    def _render_results_section(self, option_type: str):
+        """Affiche la section des résultats avec workflow amélioré"""
         results_key = f"{option_type}_results"
+        
+        # Interface de contrôle contextuelle
+        col1, col2, col3 = st.columns([2, 1, 1])
+        with col1:
+            st.markdown(f"### 📋 Résultats {option_type.title()}")
+        
+        with col2:
+            # Bouton scanner contextuel avec clé unique
+            scan_label = f"🔄 Scanner {option_type.title()}"
+            scan_key = f"scan_{option_type}_btn"
+            if st.button(scan_label, type="primary", use_container_width=True, key=scan_key):
+                # Vérifier que les symboles sont disponibles
+                optionable_symbols = st.session_state.get('optionable_symbols', [])
+                if not optionable_symbols:
+                    st.warning("⚠️ Chargez d'abord des symboles avec le bouton '🚀 Charger Symboles' ci-dessus")
+                else:
+                    st.info(f"🚀 Démarrage du scan {option_type.title()} avec {len(optionable_symbols)} symboles...")
+                    # Démarrer le scan pour ce type d'option spécifique
+                    st.session_state.trigger_scan = option_type
+                    st.session_state.scan_requested_tab = option_type  # Track which tab requested the scan
+                    st.rerun()
+        
+        with col3:
+            # Bouton clear des résultats avec clé unique
+            clear_key = f"clear_{option_type}_btn"
+            if st.button(f"🧹 Clear {option_type.title()}", use_container_width=True, key=clear_key):
+                if results_key in st.session_state:
+                    del st.session_state[results_key]
+                st.rerun()
+        
+        # Afficher les résultats s'ils existent
         if results_key in st.session_state:
             results = st.session_state[results_key]
 
             if results:
-                st.success(f"🎉 {len(results)} opportunités détectées !")
+                # Badge du nombre de résultats
+                st.success(f"🎉 {len(results)} opportunités détectées pour {option_type}!")
 
                 # Créer le DataFrame avec les colonnes exactes demandées
                 df_display = pd.DataFrame(

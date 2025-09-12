@@ -1,12 +1,30 @@
+# Core Streamlit and web framework
 streamlit==1.28.1
 requests==2.31.0
+
+# Data processing and analysis
 pandas==2.1.1
 numpy==1.24.3
+
+# Visualization
 plotly==5.17.0
+
+# Financial data and web scraping
 yfinance==0.2.18
-python-dotenv==1.0.0
-openai==1.3.7
 beautifulsoup4==4.12.2
 lxml==4.9.3
+
+# Async operations and performance
 aiohttp==3.9.1
 nest-asyncio==1.5.8
+
+# Configuration and environment
+python-dotenv==1.0.0
+
+# AI/ML APIs (optional)
+openai==1.3.7
+
+# Testing and development
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+pytest-mock>=3.10.0

@@ -2,10 +2,38 @@
 import streamlit as st
 from ui.dashboard import OptionsDashboard
 from utils.config import Config
+from utils.async_utils import cleanup_session_async_resources
+import atexit
+
+# Register global cleanup for async resources
 
 
 def main():
     """Point d'entrée principal de l'application"""
+    
+    # Configure Streamlit page settings for better WebSocket handling
+    try:
+        st.set_page_config(
+            page_title="🐋 Options Whale Screener",
+            page_icon="🐋",
+            layout="wide",
+            initial_sidebar_state="expanded",
+            # Disable some features that can cause WebSocket issues
+            menu_items={
+                'Get Help': None,
+                'Report a bug': None,
+                'About': None
+            }
+        )
+    except st.errors.StreamlitAPIException:
+        # Page config already set, ignore
+        pass
+
+    # Clean up any stale async resources at start
+    try:
+        cleanup_session_async_resources()
+    except Exception as e:
+        print(f"Warning: Could not clean up resources on startup: {e}")
 
     # Vérification de la configuration
     if not Config.TRADIER_API_KEY and not st.session_state.get("api_configured"):
@@ -36,9 +64,24 @@ def main():
                 st.rerun()
         return
 
-    # Lancer le dashboard
-    dashboard = OptionsDashboard()
-    dashboard.run()
+    # Lancer le dashboard avec gestion d'erreurs
+    try:
+        dashboard = OptionsDashboard()
+        dashboard.run()
+    except Exception as e:
+        st.error(f"❌ Erreur de l'application: {str(e)}")
+        st.info("💡 Essayez de rafraîchir la page (F5) pour résoudre les problèmes de connexion.")
+        
+        # Clean up resources on error
+        try:
+            cleanup_session_async_resources()
+        except Exception:
+            pass
+            
+        # Show debug info in expander
+        with st.expander("🔍 Informations de débogage"):
+            st.code(str(e))
+            st.text("Si le problème persiste, vérifiez votre connexion internet et les clés API.")
 
 
 if __name__ == "__main__":

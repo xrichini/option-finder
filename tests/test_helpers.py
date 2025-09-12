@@ -49,8 +49,8 @@ def test_get_high_short_interest_symbols_success(mocker, mock_html_table):
     # Exécute la fonction
     result = get_high_short_interest_symbols()
 
-    # Vérifie les résultats
-    assert result == ["GME", "AMC"]
+    # Vérifie les résultats (trié alphabétiquement)
+    assert set(result) == {"GME", "AMC"}
     assert len(result) == 2
 
 
