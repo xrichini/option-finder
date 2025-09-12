@@ -12,7 +12,7 @@ class Config:
     DEFAULT_DTE = 7  # Days To Expiration par défaut
     MAX_DTE = 45  # DTE maximum
     MIN_VOLUME_THRESHOLD = 1000
-    MIN_OPEN_INTEREST_THRESHOLD = 500
+    MIN_OPEN_INTEREST_THRESHOLD = 1000
     VOLUME_OI_RATIO_THRESHOLD = 2.0
     DEFAULT_SHORT_INTEREST_THRESHOLD = 30.0  # % par défaut
     MIN_WHALE_SCORE = 70  # Score minimum pour détecter une baleine

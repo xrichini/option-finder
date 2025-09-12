@@ -1,8 +1,6 @@
 # screener_logic.py
-import pandas as pd
-import yfinance as yf
-from typing import List, Dict, Tuple
-from datetime import datetime, timedelta
+from typing import List
+from datetime import datetime
 from models.option_model import OptionScreenerResult
 from data.tradier_client import TradierClient
 from utils.config import Config
@@ -13,8 +11,14 @@ class OptionsScreener:
         self.config = Config()
         self.client = TradierClient()
 
-    def calculate_whale_score(self, volume_1d: int, volume_7d: int, open_interest: int, 
-                             delta: float, iv: float) -> float:
+    def calculate_whale_score(
+        self,
+        volume_1d: int,
+        volume_7d: int,
+        open_interest: int,
+        delta: float,
+        iv: float,
+    ) -> float:
         """Score de probabilité de 'whale' basé sur plusieurs critères"""
         score = 0
 
@@ -65,14 +69,21 @@ class OptionsScreener:
 
         return min(score, 100)  # Cap à 100
 
-    def screen_big_calls(self, symbols: List[str], max_dte: int = 7, 
-                        min_volume: int = 1000, min_oi: int = 500,
-                        min_whale_score: float = 70) -> List[OptionScreenerResult]:
+    def _screen_options(
+        self,
+        symbols: List[str],
+        option_type: str,
+        max_dte: int = 7,
+        min_volume: int = 1000,
+        min_oi: int = 500,
+        min_whale_score: float = 70,
+    ) -> List[OptionScreenerResult]:
         """
-        Screen principal pour détecter les big call buying
+        Screen générique pour détecter les big options buying
 
         Args:
             symbols: Liste des symboles à analyser
+            option_type: 'call' ou 'put'
             max_dte: DTE maximum (défaut 7)
             min_volume: Volume minimum requis
             min_oi: Open Interest minimum
@@ -89,120 +100,155 @@ class OptionsScreener:
                 print(f"❌ Pas d'expirations pour {symbol}")
                 continue
 
-            # 2. Filtrer par DTE
+            # 2. Filtrer les expirations par DTE
+            # Filtrer les expirations par DTE
             filtered_exps = self.client.filter_expirations_by_dte(expirations, max_dte)
             if not filtered_exps:
-                print(f"❌ Pas d'expirations dans la plage DTE pour {symbol}")
+                print(f"❌ Pas d'expirations < {max_dte} DTE pour {symbol}")
                 continue
 
-            print(f"📅 {len(filtered_exps)} expirations trouvées: {filtered_exps}")
+            # 3. Pour chaque expiration, analyser les options
+            print(f"📅 Analyse de {len(filtered_exps)} expirations...")
 
-            # 3. Analyser chaque expiration
             for expiration in filtered_exps:
-                chain_data = self.client.get_option_chains(symbol, expiration)
+                try:
+                    # Récupérer les chaînes d'options
+                    chain_data = self.client.get_option_chains(symbol, expiration)
+                    if not chain_data:
+                        continue
 
-                if not chain_data or 'options' not in chain_data:
+                    # Filtrer par type d'option (call/put)
+                    options = [
+                        opt
+                        for opt in chain_data
+                        if (
+                            opt["option_type"].lower() == option_type
+                            and opt["volume"] >= min_volume
+                            and opt["open_interest"] >= min_oi
+                        )
+                    ]
+
+                except Exception as e:
+                    print(f"❌ Erreur: {symbol} exp. {expiration} - {str(e)}")
                     continue
 
-                # Parse les options de la chaîne
-                options = chain_data['options'].get('option', [])
-                if isinstance(options, dict):  # Si une seule option
-                    options = [options]
+                # 4. Analyser chaque option
+                for opt in options:
+                    try:
+                        # Vérifier données requises
+                        required_fields = [
+                            "volume",
+                            "open_interest",
+                            "symbol",
+                            "expiration_date",
+                            "strike",
+                        ]
+                        if not all(field in opt for field in required_fields):
+                            symbol_str = opt.get("symbol", "?")
+                            print(f"❌ Données manquantes: {symbol_str}")
+                            continue
 
-                # 4. Filtrer les calls uniquement
-                for option in options:
-                    if option.get('option_type') != 'call':
+                        # Extraire métriques avec validation
+                        volume_1d = int(opt["volume"])
+                        open_interest = int(opt["open_interest"])
+                        volume_7d = volume_1d * 7  # TODO: Vraie donnée 7j
+                        strike = float(opt["strike"])
+
+                        # Traiter les Greeks avec précaution
+                        greeks = opt.get("greeks", {}) or {}
+                        try:
+                            delta = float(greeks.get("delta", 0.3))
+                            iv = float(greeks.get("mid_iv", 0.4))
+                        except (ValueError, TypeError):
+                            delta = 0.3
+                            iv = 0.4
+
+                        # Calculer whale score
+                        whale_score = self.calculate_whale_score(
+                            volume_1d=volume_1d,
+                            volume_7d=volume_7d,
+                            open_interest=open_interest,
+                            delta=abs(delta),  # Valeur absolue pour les puts
+                            iv=iv,
+                        )
+
+                        # Vérifier si au-dessus du seuil
+                        if whale_score >= min_whale_score:
+                            result = OptionScreenerResult(
+                                symbol=symbol,
+                                option_symbol=opt["symbol"],
+                                expiration=opt["expiration_date"],
+                                strike=strike,
+                                side=option_type,
+                                delta=delta,
+                                volume_1d=volume_1d,
+                                volume_7d=volume_7d,
+                                open_interest=open_interest,
+                                last_price=float(opt.get("last", 0.0)),
+                                bid=float(opt.get("bid", 0.0)),
+                                ask=float(opt.get("ask", 0.0)),
+                                implied_volatility=iv,
+                                whale_score=whale_score,
+                                dte=int(
+                                    (
+                                        datetime.strptime(
+                                            opt["expiration_date"], "%Y-%m-%d"
+                                        )
+                                        - datetime.now()
+                                    ).days
+                                ),
+                            )
+                            results.append(result)
+                            score_msg = (
+                                f"✅ {result.option_symbol} "
+                                f"Score: {whale_score:.0f}"
+                            )
+                            print(score_msg)
+
+                    except Exception as e:
+                        option_info = {
+                            "symbol": opt.get("symbol", "N/A"),
+                            "type": opt.get("option_type", "N/A"),
+                            "data": opt,
+                        }
+                        print(f"❌ Erreur traitement option: {str(e)}")
+                        print(f"🔍 Détails option en erreur: {option_info}")
                         continue
 
-                    # Extraire les données
-                    volume_1d = int(option.get('volume', 0))
-                    open_interest = int(option.get('open_interest', 0))
+        return results
 
-                    # Filtres de base
-                    if volume_1d < min_volume or open_interest < min_oi:
-                        continue
+    def screen_big_calls(
+        self,
+        symbols: List[str],
+        max_dte: int = 7,
+        min_volume: int = 1000,
+        min_oi: int = 500,
+        min_whale_score: float = 70,
+    ) -> List[OptionScreenerResult]:
+        """Screen principal pour détecter les big call buying"""
+        return self._screen_options(
+            symbols=symbols,
+            option_type="call",
+            max_dte=max_dte,
+            min_volume=min_volume,
+            min_oi=min_oi,
+            min_whale_score=min_whale_score,
+        )
 
-                    # Greeks et autres données
-                    greeks = option.get('greeks', {})
-                    delta = float(greeks.get('delta', 0))
-                    iv = float(greeks.get('smv_vol', 0))
-
-                    # Volume 7 jours (estimation pour MVP)
-                    volume_7d = volume_1d * 5  # Estimation simplifiée # TODO: Remplacer par données réelles
-
-                    # Calcul du whale score
-                    whale_score = self.calculate_whale_score(
-                        volume_1d, volume_7d, open_interest, delta, iv
-                    )
-
-                    # Filtre par whale score
-                    if whale_score < min_whale_score:
-                        continue
-
-                    # Calculer DTE
-                    exp_date = datetime.strptime(expiration, '%Y-%m-%d').date()
-                    dte = (exp_date - datetime.now().date()).days
-
-                    # Créer le résultat
-                    result = OptionScreenerResult(
-                        symbol=symbol,
-                        side='call',
-                        strike=float(option.get('strike', 0)),
-                        expiration=expiration,
-                        delta=delta,
-                        volume_1d=volume_1d,
-                        volume_7d=volume_7d,
-                        open_interest=open_interest,
-                        option_symbol=option.get('symbol', ''),
-                        last_price=float(option.get('last', 0)),
-                        bid=float(option.get('bid', 0)),
-                        ask=float(option.get('ask', 0)),
-                        implied_volatility=iv,
-                        whale_score=whale_score,
-                        dte=dte
-                    )
-
-                    results.append(result)
-                    print(f"✅ Trouvé: {result.option_symbol} - Score: {whale_score:.0f}")
-
-        # Tri par whale score décroissant
-        return sorted(results, key=lambda x: x.whale_score, reverse=True)
-
-    def get_short_interest_data(self, symbols: List[str],
-                               min_short_interest: float = 30.0) -> List[Dict]:
-        """
-        Récupère les données de short interest pour les symboles
-
-        Args:
-            symbols: Liste des symboles
-            min_short_interest: Short interest minimum en %
-        """
-        candidates = []
-
-        print(f"🔍 Analyse short interest (seuil: {min_short_interest}%)")
-
-        for symbol in symbols:
-            try:
-                ticker = yf.Ticker(symbol)
-                info = ticker.info
-
-                short_ratio = info.get('shortRatio', 0)
-                short_percent = info.get('shortPercentOfFloat', 0)
-
-                if short_percent >= min_short_interest:
-                    candidates.append({
-                        'symbol': symbol,
-                        'short_ratio': short_ratio,
-                        'short_percent': short_percent,
-                        'market_cap': info.get('marketCap', 0),
-                        'float_shares': info.get('floatShares', 0)
-                    })
-                    print(f"✅ {symbol}: {short_percent:.1f}% short interest")
-                else:
-                    print(f"❌ {symbol}: {short_percent:.1f}% (< {min_short_interest}%)")
-
-            except Exception as e:
-                print(f"❌ Erreur pour {symbol}: {e}")
-                continue
-
-        return sorted(candidates, key=lambda x: x['short_percent'], reverse=True)
+    def screen_big_puts(
+        self,
+        symbols: List[str],
+        max_dte: int = 7,
+        min_volume: int = 1000,
+        min_oi: int = 500,
+        min_whale_score: float = 70,
+    ) -> List[OptionScreenerResult]:
+        """Screen principal pour détecter les big put buying"""
+        return self._screen_options(
+            symbols=symbols,
+            option_type="put",
+            max_dte=max_dte,
+            min_volume=min_volume,
+            min_oi=min_oi,
+            min_whale_score=min_whale_score,
+        )
