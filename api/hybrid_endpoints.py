@@ -8,13 +8,30 @@ et les données enrichies Tradier (temps réel) + Polygon.io (historique)
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Any, Dict
 from datetime import datetime
 import logging
+import math
 
 from services.hybrid_screening_service import HybridScreeningService
 
 logger = logging.getLogger(__name__)
+
+def sanitize_floats(obj: Any) -> Any:
+    """
+    Récursivement sanitize les valeurs float inf/nan
+    pour éviter les erreurs JSON
+    """
+    if isinstance(obj, dict):
+        return {k: sanitize_floats(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [sanitize_floats(item) for item in obj]
+    elif isinstance(obj, float):
+        # Remplacer inf et nan par None
+        if math.isnan(obj) or math.isinf(obj):
+            return None
+        return obj
+    return obj
 
 # Router pour les endpoints hybrides
 hybrid_router = APIRouter(prefix="/api/hybrid", tags=["Hybrid Analytics"])
@@ -113,6 +130,10 @@ async def screen_options_hybrid(request: HybridScreeningRequest):
         }
         
         logger.info(f"✅ Screening hybride terminé: {len(opportunities)} résultats")
+        
+        # Sanitize all float values before returning
+        response = sanitize_floats(response)
+        
         return response
         
     except Exception as e:
@@ -261,7 +282,7 @@ async def scan_all_options(request: ScanAllRequest = None):
                 "statistics": {
                     "calls": call_stats,
                     "puts": put_stats,
-                    "call_put_ratio": len(call_opportunities) / len(put_opportunities) if len(put_opportunities) > 0 else float('inf'),
+                    "call_put_ratio": len(call_opportunities) / len(put_opportunities) if len(put_opportunities) > 0 else None,
                     "best_overall": max(opportunities, key=lambda x: x.get("hybrid_score", 0)) if opportunities else None
                 },
                 
@@ -291,6 +312,10 @@ async def scan_all_options(request: ScanAllRequest = None):
             }
         
         logger.info(f"✅ Scan complet terminé: {len(opportunities)} résultats ({len(call_opportunities)} CALLS, {len(put_opportunities)} PUTS)")
+        
+        # Sanitize all float values before returning
+        response = sanitize_floats(response)
+        
         return response
         
     except Exception as e:

@@ -349,7 +349,14 @@ class HybridDataService:
                 if avg_volume_30d and avg_volume_30d > 0:
                     # Approximation: volume option / (volume underlying moyen * 0.01)
                     # Le facteur 0.01 est une heuristique pour normaliser
-                    volume_anomaly_ratio = opp.volume / (avg_volume_30d * 0.01)
+                    denominator = avg_volume_30d * 0.01
+                    if denominator > 0:
+                        ratio = opp.volume / denominator
+                        # Sanitize infinity/NaN values
+                        if not (ratio == float('inf') or ratio == float('-inf') or ratio != ratio):
+                            volume_anomaly_ratio = ratio
+                        else:
+                            volume_anomaly_ratio = None
                 
                 historical_score = self._calculate_historical_score(historical_data, opp)
             
