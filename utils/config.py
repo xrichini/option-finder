@@ -16,6 +16,7 @@ class Config:
     # Screening defaults / parameters
     DEFAULT_DTE: int = 7
     MAX_DTE: int = 45
+    MIN_IV: int = 20  # Volatilité Implicite minimum (%)
 
     # Thresholds - Production (default)
     MIN_VOLUME_THRESHOLD_PROD: int = 1000
@@ -141,9 +142,24 @@ class Config:
             "min_open_interest_threshold": (cls.get_min_open_interest_threshold()),
             "volume_oi_ratio_threshold": (cls.get_volume_oi_ratio_threshold()),
             "min_whale_score": cls.get_min_whale_score(),
+            "default_dte": cls.get_default_dte(),
+            "max_dte": cls.get_max_dte(),
+            "min_iv": cls.get_min_iv(),
             "environment": cls.get_tradier_environment(),
             "is_sandbox": cls.is_sandbox(),
         }
+
+    @classmethod
+    def get_default_dte(cls) -> int:
+        return cls.DEFAULT_DTE
+
+    @classmethod
+    def get_max_dte(cls) -> int:
+        return cls.MAX_DTE
+
+    @classmethod
+    def get_min_iv(cls) -> int:
+        return cls.MIN_IV
 
     @classmethod
     def validate(cls, strict: bool = False) -> bool:

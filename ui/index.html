@@ -964,15 +964,19 @@
                 console.log('📋 Configuration chargée depuis l\'API:', config);
                 
                 // Mettre à jour les inputs avec les vraies valeurs depuis config.py
-                if (config.min_volume_threshold !== undefined) {
-                    document.getElementById('sidebarMinVolume').value = config.min_volume_threshold;
+                const params = config.screening_parameters || {};
+                
+                if (params.min_volume_threshold !== undefined) {
+                    document.getElementById('sidebarMinVolume').value = params.min_volume_threshold;
                 }
-                if (config.min_whale_score !== undefined) {
-                    document.getElementById('sidebarWhaleScore').value = config.min_whale_score;
+                if (params.min_whale_score !== undefined) {
+                    document.getElementById('sidebarWhaleScore').value = params.min_whale_score;
                 }
-                if (config.screening_parameters) {
-                    // OI threshold (non exposé dans les inputs actuels, mais disponible)
-                    console.log('OI Threshold:', config.screening_parameters.min_open_interest_threshold);
+                if (params.min_iv !== undefined) {
+                    document.getElementById('sidebarMinIv').value = params.min_iv;
+                }
+                if (params.max_dte !== undefined) {
+                    document.getElementById('sidebarMaxDte').value = params.max_dte;
                 }
                 
             } catch (error) {
@@ -2543,6 +2547,7 @@
             document.getElementById('sidebarMinShortInterest').value = 20;
             document.getElementById('sidebarMinMarketCap').value = 100000000;
             document.getElementById('sidebarMinStockVolume').value = 500000;
+            document.getElementById('sidebarSymbols').value = 'AAPL, TSLA, NVDA, SPY, MSFT';
             
             // Réinitialiser l'affichage
             toggleSymbolsInput();
