@@ -951,6 +951,35 @@
         let lastScanTime = null;
         
 
+        // Charge la configuration depuis l'API et initialise les inputs
+        async function loadConfigFromAPI() {
+            try {
+                const response = await fetch('/api/config');
+                if (!response.ok) {
+                    console.warn('Impossible de charger la config de l\'API, utilisation des défauts');
+                    return;
+                }
+                
+                const config = await response.json();
+                console.log('📋 Configuration chargée depuis l\'API:', config);
+                
+                // Mettre à jour les inputs avec les vraies valeurs depuis config.py
+                if (config.min_volume_threshold !== undefined) {
+                    document.getElementById('sidebarMinVolume').value = config.min_volume_threshold;
+                }
+                if (config.min_whale_score !== undefined) {
+                    document.getElementById('sidebarWhaleScore').value = config.min_whale_score;
+                }
+                if (config.screening_parameters) {
+                    // OI threshold (non exposé dans les inputs actuels, mais disponible)
+                    console.log('OI Threshold:', config.screening_parameters.min_open_interest_threshold);
+                }
+                
+            } catch (error) {
+                console.warn('Erreur lors du chargement de la config:', error);
+            }
+        }
+
         // Initialisation au chargement de la page
         document.addEventListener('DOMContentLoaded', function() {
             console.log('DOMContentLoaded déclenché');
@@ -982,6 +1011,9 @@
         // Chargement initial des données (sans scan automatique)
         async function loadInitialData() {
             console.log('Interface initialisée - prête pour le scanning');
+            
+            // Charger la configuration depuis l'API
+            await loadConfigFromAPI();
             
             // Désactiver les filtres initialement (pas de données)
             toggleFilterButtons(false);
@@ -2059,10 +2091,10 @@
 
         // Fonctions pour la sidebar
         function resetSidebarConfig() {
-            document.getElementById('sidebarMinVolume').value = 50;
+            // Charger les valeurs par défaut depuis l'API plutôt que hardcodées
+            loadConfigFromAPI();
             document.getElementById('sidebarMinIv').value = 20;
             document.getElementById('sidebarMaxDte').value = 45;
-            document.getElementById('sidebarWhaleScore').value = 50;
             document.getElementById('sidebarEnableCalls').checked = true;
             document.getElementById('sidebarEnablePuts').checked = true;
             document.getElementById('sidebarSymbols').value = 'AAPL, TSLA, NVDA, SPY, MSFT';
