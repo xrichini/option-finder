@@ -71,7 +71,31 @@ def main():
         if not Config.is_sandbox():
             print("💡 Pour utiliser sandbox en dev: TRADIER_SANDBOX=true dans .env")
 
-    # Vérification de l'interface utilisateur
+    # Vérification des autres clés API
+    print("\n📋 Vérification des autres services API:")
+
+    polygon_key = Config.get_polygon_api_key()
+    if polygon_key and not polygon_key.startswith("your-"):
+        print("✅ Polygon.io: Configuré")
+    else:
+        print("⚠️  Polygon.io: Non configuré (données historiques indisponibles)")
+        print(
+            "💡 Ajoutez POLYGON_API_KEY dans .env pour activer les données historiques"
+        )
+
+    openai_key = Config.get_openai_api_key()
+    perplexity_key = Config.get_perplexity_api_key()
+    if openai_key and not openai_key.startswith("your-"):
+        print("✅ OpenAI: Configuré")
+    elif perplexity_key and not perplexity_key.startswith("your-"):
+        print("✅ Perplexity: Configuré")
+    else:
+        print("⚠️  IA (OpenAI/Perplexity): Non configurée (analyse IA désactivée)")
+        print(
+            "💡 Ajoutez OPENAI_API_KEY ou PERPLEXITY_API_KEY dans .env pour activer l'IA"
+        )
+
+    print()
     ui_path = Path("ui/index.html")
     if not ui_path.exists():
         print("⚠️  Interface UI non trouvée dans ui/index.html")

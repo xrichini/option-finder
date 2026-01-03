@@ -178,6 +178,13 @@ class Config:
             )
             ok = False
 
+        # Polygon API key (important for historical data)
+        polygon_key = cls.get_polygon_api_key()
+        if not polygon_key or polygon_key.startswith("your-"):
+            logger.warning(
+                "Polygon.io API key not configured. Set POLYGON_API_KEY for historical data support"
+            )
+
         # Optional but useful keys
         if not cls.get_openai_api_key() and (not cls.get_perplexity_api_key()):
             logger.info(
