@@ -99,9 +99,7 @@ class Config:
 
     @classmethod
     def has_ai_capabilities(cls) -> bool:
-        return bool(
-            cls.get_openai_api_key() or cls.get_perplexity_api_key()
-        )
+        return bool(cls.get_openai_api_key() or cls.get_perplexity_api_key())
 
     @classmethod
     def get_min_volume_threshold(cls) -> int:
@@ -139,12 +137,8 @@ class Config:
     def get_screening_parameters(cls) -> dict:
         return {
             "min_volume_threshold": cls.get_min_volume_threshold(),
-            "min_open_interest_threshold": (
-                cls.get_min_open_interest_threshold()
-            ),
-            "volume_oi_ratio_threshold": (
-                cls.get_volume_oi_ratio_threshold()
-            ),
+            "min_open_interest_threshold": (cls.get_min_open_interest_threshold()),
+            "volume_oi_ratio_threshold": (cls.get_volume_oi_ratio_threshold()),
             "min_whale_score": cls.get_min_whale_score(),
             "environment": cls.get_tradier_environment(),
             "is_sandbox": cls.is_sandbox(),
@@ -169,12 +163,9 @@ class Config:
             ok = False
 
         # Optional but useful keys
-        if not cls.get_openai_api_key() and (
-            not cls.get_perplexity_api_key()
-        ):
+        if not cls.get_openai_api_key() and (not cls.get_perplexity_api_key()):
             logger.info(
-                "No AI API keys configured "
-                "(OPENAI_API_KEY or PERPLEXITY_API_KEY)"
+                "No AI API keys configured " "(OPENAI_API_KEY or PERPLEXITY_API_KEY)"
             )
 
         if strict and not ok:

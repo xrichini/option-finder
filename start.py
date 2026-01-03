@@ -61,10 +61,7 @@ def main():
     ok = Config.validate(strict=strict_mode)
 
     if not ok:
-        print(
-            "⚠️  Configuration incomplète — "
-            "vérifiez les variables d'environnement"
-        )
+        print("⚠️  Configuration incomplète — " "vérifiez les variables d'environnement")
         print(
             "💡 Créez un fichier .env avec "
             "TRADIER_API_KEY_SANDBOX et TRADIER_API_KEY_PRODUCTION"
@@ -72,10 +69,7 @@ def main():
         print()
     else:
         env = Config.get_tradier_environment()
-        print(
-            "✅ Clé API Tradier configurée "
-            f"(environnement: {env})"
-        )
+        print("✅ Clé API Tradier configurée " f"(environnement: {env})")
 
     # Vérification de l'interface utilisateur
     ui_path = Path("ui/index.html")

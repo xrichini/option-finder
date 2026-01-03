@@ -1,0 +1,162 @@
+╔════════════════════════════════════════════════════════════════════════════╗
+║         ��� SQUEEZE FINDER - CODE USAGE ANALYSIS SUMMARY                    ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+��� APPLICATION GOALS
+────────────────────────────────────────────────────────────────────────────
+✅ Replace Streamlit with FastAPI + modern JavaScript frontend
+✅ Detect "whale" institutional options activity in real-time
+✅ Provide whale score algorithm (0-100 proprietary scoring)
+✅ WebSocket live updates for market monitoring
+✅ AI-powered trade recommendations
+✅ Support for high short interest detection
+
+════════════════════════════════════════════════════════════════════════════
+
+��� /DATA DIRECTORY ANALYSIS (19 files total)
+
+��� ACTIVELY USED (Production Application)
+─────────────────────────────────────────────────────────────────────────────
+  ✅ enhanced_tradier_client.py      → CORE: Real-time options data
+  ✅ polygon_client.py               → Historical data & trends  
+  ✅ tradier_client.py               → Base API wrapper
+  ✅ hybrid_data_manager.py          → Data fusion (Tradier + Polygon)
+  ✅ historical_data_manager.py      → Volume/OI anomaly analysis
+⚙️  PLANNED FEATURES (For Future Integration)
+─────────────────────────────────────────────────────────────────────────────
+  📋 short_interest_scraper.py       → User input + HighShortInterest.com
+��� PERFORMANCE/OPTIONAL (Improves but not required)
+─────────────────────────────────────────────────────────────────────────────
+  ⚙️  async_tradier.py               → Concurrent API calls (0.08s/req)
+
+��� LEGACY CODE (Tests & Old Paths)
+─────────────────────────────────────────────────────────────────────────────
+  ��� screener_logic.py               → Original screening (in tests)
+  ��� enhanced_screener.py            → Old AI wrapper (in tests)
+  ��� enhanced_screener_v2.py         → Experimental ML (in tests)
+  ��� market_chameleon_scraper.py     → Web scraping (unreliable)
+
+��� DEAD CODE (Never Used)
+─────────────────────────────────────────────────────────────────────────────
+  ❌ ai_analysis_manager.py          → Never integrated
+  ❌ ai_short_interest_classifier.py → Experimental ML
+  ❌ advanced_anomaly_detector.py    → ML experiment
+  ❌ enhanced_options_alerts.py      → Old architecture
+  ❌ integrated_screening_engine.py  → Failed integration
+
+════════════════════════════════════════════════════════════════════════════
+
+���️ PRODUCTION ARCHITECTURE
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ app.py (FastAPI Main Application)                                       │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│ ┌─────────────────────────────────────────────────────────────────┐   │
+│ │ services/screening_service.py (Main Logic)                      │   │
+│ ├─────────────────────────────────────────────────────────────────┤   │
+│ │ • enhanced_tradier_client.py ............ Real-time data       │   │
+│ │ • unusual_whales_service.py ............ Whale detection       │   │
+│ │ • config_service.py .................... Parameters            │   │
+│ └─────────────────────────────────────────────────────────────────┘   │
+│                                                                          │
+│ ┌─────────────────────────────────────────────────────────────────┐   │
+│ │ services/hybrid_screening_service.py (Advanced Scoring)        │   │
+│ ├─────────────────────────────────────────────────────────────────┤   │
+│ │ • screening_service.py ................. Base screening         │   │
+│ │ • hybrid_data_service.py ............... Data enrichment        │   │
+│ │   ├─ enhanced_tradier_client.py ........ Real-time quotes      │   │
+│ │   └─ polygon_client.py ................. Historical data        │   │
+│ │ • historical_data_manager.py ........... Anomaly detection      │   │
+│ └─────────────────────────────────────────────────────────────────┘   │
+│                                                                          │
+│ ┌─────────────────────────────────────────────────────────────────┐   │
+│ │ api/hybrid_endpoints.py (API Routes)                            │   │
+│ │ • /api/hybrid/scan-all                                          │   │
+│ │ • /api/hybrid/screen                                            │   │
+│ │ • /api/hybrid/status                                            │   │
+│ └─────────────────────────────────────────────────────────────────┘   │
+│                                                                          │
+│ ┌─────────────────────────────────────────────────────────────────┐   │
+│ │ ui/index.html (JavaScript Frontend)                             │   │
+│ │ • Real-time WebSocket updates                                   │   │
+│ │ • Whale score display                                           │   │
+│ │ • Filter & configuration UI                                     │   │
+│ └─────────────────────────────────────────────────────────────────┘   │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
+
+════════════════════════════════════════════════════════════════════════════
+
+��� WHALE SCORE ALGORITHM LOCATION
+
+  Legacy Location: screener_logic.py
+  ├── calculate_whale_score() ........... Base scoring
+  ├── calculate_vol_oi_score() .......... Volume/OI ratio
+  └── calculate_large_block_score() .... Institutional blocks
+  
+  Production Location: services/ (via UnusualWhalesService)
+  ├── More robust implementation
+  ├── Persistence in options_history.db
+  └── Historical trend analysis
+  
+  Enhanced with: services/hybrid_data_service.py
+  └── Polygon.io historical context
+  └── Price trends & volatility regime
+
+════════════════════════════════════════════════════════════════════════════
+
+✅ KEY FINDINGS
+
+What's Actually Being Used:
+  • enhanced_tradier_client.py → Real-time data source
+  • services/screening_service.py → Main logic 
+  • services/hybrid_screening_service.py → Advanced scoring
+  • polygon_client.py → Historical enrichment
+  • ui/index.html → Modern web interface
+
+Planned Features (To Integrate):
+  • short_interest_scraper.py → User input + HighShortInterest.com scraping
+  
+Legacy Code That Still Exists:
+  • screener_logic.py → Kept for tests, not in production
+  • enhanced_screener.py → Old AI wrapper
+  • enhanced_screener_v2.py → Experimental anomaly detection
+  
+Dead Code To Remove:
+  • ai_analysis_manager.py (never integrated)
+  • ai_short_interest_classifier.py (experimental ML)
+  • advanced_anomaly_detector.py (experimental ML)
+  • enhanced_options_alerts.py (old architecture)
+  • integrated_screening_engine.py (failed experiment)
+
+════════════════════════════════════════════════════════════════════════════
+
+��� USAGE STATISTICS
+
+Total /data files: 19
+├── Actively used: 5 files    (26%)
+├── Optional/Performance: 1 file (5%)
+├── Planned features: 1 file  (5%)
+├── Legacy/Tests: 4 files     (21%)
+├── Dead code: 5 files        (26%)
+└── Generated: 2 dirs (Cache/Pycache)
+
+════════════════════════════════════════════════════════════════════════════
+
+��� RECOMMENDATIONS
+
+IMMEDIATE:
+  • Remove dead code files (ai_*.py, advanced_anomaly_detector.py, etc)
+  • Move screener_logic.py to tests/fixtures/ if tests need it
+  • Document hybrid_data_service.py as the production whale scorer
+
+FUTURE:
+  • Refactor screener_logic.py methods into services layer
+  • Archive legacy screener_v2.py experiment
+  • Consider re-enabling Market Chameleon with reliable HTTP client
+
+════════════════════════════════════════════════════════════════════════════
+Generated: 2025-01-03
+See: CODE_USAGE_ANALYSIS.md for detailed breakdown
+════════════════════════════════════════════════════════════════════════════

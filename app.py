@@ -100,9 +100,7 @@ class ConnectionManager:
             await websocket.send_text(json.dumps(message))
         except WebSocketDisconnect:
             self.disconnect(websocket)
-            logger.info(
-                "WebSocketDisconnect lors de l'envoi d'un message"
-            )
+            logger.info("WebSocketDisconnect lors de l'envoi d'un message")
         except Exception:
             logger.exception("Erreur lors de l'envoi d'un message WebSocket")
             self.disconnect(websocket)
@@ -186,9 +184,7 @@ async def load_symbols(request: SymbolRequest):
 
 
 @app.post("/api/screening/start")
-async def start_screening(
-    request: ScreeningRequest, background_tasks: BackgroundTasks
-):
+async def start_screening(request: ScreeningRequest, background_tasks: BackgroundTasks):
     """Démarre un screening en arrière-plan"""
 
     # Valider la requête
@@ -280,9 +276,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 break
             except json.JSONDecodeError:
                 msg = {"type": "error", "message": "Format invalide"}
-                await manager.send_personal_message(
-                    msg, websocket
-                )
+                await manager.send_personal_message(msg, websocket)
             except Exception as e:
                 logger.error(f"Erreur WebSocket: {e}")
                 await manager.send_personal_message(
@@ -356,9 +350,7 @@ async def run_screening_task(session_id: str, request: ScreeningRequest):
         )
 
         result_count = len(results)
-        logger.info(
-            f"Screening {session_id} terminé: {result_count} résultats"
-        )
+        logger.info(f"Screening {session_id} terminé: {result_count} résultats")
 
     except Exception as e:
         logger.exception(f"Erreur screening {session_id}")
