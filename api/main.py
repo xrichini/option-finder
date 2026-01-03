@@ -315,6 +315,8 @@ async def get_database_stats():
         }
 
 # Gestion des fichiers statiques
+# Mount the ui directory to serve CSS, JS, etc
+app.mount("/ui", StaticFiles(directory="ui"), name="ui")
 app.mount("/static", StaticFiles(directory="ui/static"), name="static")
 
 def get_embedded_dashboard_html() -> str:

@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>🐋 Options Screener - Interface Trading</title>
-    <link rel="stylesheet" href="advanced-filters.css">
+    <link rel="stylesheet" href="/ui/advanced-filters.css">
     <style>
         * {
             margin: 0;
@@ -2090,9 +2090,9 @@
         // }, 120000);
 
         // Fonctions pour la sidebar
-        function resetSidebarConfig() {
+        async function resetSidebarConfig() {
             // Charger les valeurs par défaut depuis l'API plutôt que hardcodées
-            loadConfigFromAPI();
+            await loadConfigFromAPI();
             document.getElementById('sidebarMinIv').value = 20;
             document.getElementById('sidebarMaxDte').value = 45;
             document.getElementById('sidebarEnableCalls').checked = true;
@@ -2533,9 +2533,9 @@
         }
         
         // Mise à jour de la fonction de reset pour inclure Short Interest
-        function resetSidebarConfigWithShortInterest() {
+        async function resetSidebarConfigWithShortInterest() {
             // Reset classique
-            resetSidebarConfig();
+            await resetSidebarConfig();
             
             // Reset Short Interest
             document.getElementById('sidebarEnableShortInterest').checked = false;
@@ -2654,6 +2654,6 @@
             window.wsManager.connect();
         });
     </script>
-    <script src="advanced-filters.js"></script>
+    <script src="/ui/advanced-filters.js"></script>
 </body>
 </html>
