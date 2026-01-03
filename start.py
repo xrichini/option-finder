@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 🚀 Script de démarrage Options Squeeze Finder
 Version FastAPI moderne - Remplace l'ancienne interface Streamlit
@@ -20,12 +21,12 @@ load_dotenv()
 def print_banner():
     """Affiche la bannière de démarrage"""
     print("=" * 60)
-    print("🐋 OPTIONS SQUEEZE FINDER - FastAPI Backend")
+    print("OPTIONS SQUEEZE FINDER - FastAPI Backend")
     print("=" * 60)
-    print("✅ Architecture moderne FastAPI + JavaScript")
-    print("🔄 WebSocket temps réel")
-    print("📊 API REST complète")
-    print("🤖 IA intégrée pour screening")
+    print("OK Architecture moderne FastAPI + JavaScript")
+    print("LIVE WebSocket temps réel")
+    print("STATS API REST complète")
+    print("AI IA intégrée pour screening")
     print("-" * 60)
 
 
@@ -35,12 +36,12 @@ def check_dependencies():
         import fastapi
         import uvicorn
 
-        print(f"✅ FastAPI {fastapi.__version__} détecté")
-        print(f"✅ Uvicorn {uvicorn.__version__} détecté")
+        print(f"OK FastAPI {fastapi.__version__} détecté")
+        print(f"OK Uvicorn {uvicorn.__version__} détecté")
         return True
     except ImportError as e:
-        print(f"❌ Dépendance manquante: {e}")
-        print("💡 Exécutez: pip install -r requirements.txt")
+        print(f"ERROR Dépendance manquante: {e}")
+        print("TIP Exécutez: pip install -r requirements.txt")
         return False
 
 
@@ -61,66 +62,80 @@ def main():
     ok = Config.validate(strict=strict_mode)
 
     if not ok:
-        print("⚠️  Configuration incomplète — " "vérifiez les variables d'environnement")
-        print("💡 Créez un fichier .env avec " "TRADIER_API_KEY_PRODUCTION")
+        print(
+            "WARNING Configuration incomplète — vérifiez les variables d'environnement"
+        )
+        print("TIP Créez un fichier .env avec TRADIER_API_KEY_PRODUCTION")
         print()
     else:
         env = Config.get_tradier_environment()
         sandbox_status = "sandbox (dev)" if Config.is_sandbox() else "production"
-        print("✅ Clé API Tradier configurée " f"(environnement: {sandbox_status})")
+        print(f"OK Clé API Tradier configurée (environnement: {sandbox_status})")
         if not Config.is_sandbox():
-            print("💡 Pour utiliser sandbox en dev: TRADIER_SANDBOX=true dans .env")
+            print("TIP Pour utiliser sandbox en dev: TRADIER_SANDBOX=true dans .env")
 
     # Vérification des autres clés API
-    print("\n📋 Vérification des autres services API:")
+    print("\nCHECK Vérification des autres services API:")
 
     polygon_key = Config.get_polygon_api_key()
     if polygon_key and not polygon_key.startswith("your-"):
-        print("✅ Polygon.io: Configuré")
+        # Valider la clé Polygon en faisant un appel de test
+        try:
+            from data.polygon_client import PolygonClient
+            test_client = PolygonClient(polygon_key)
+            if test_client.validate_key():
+                print("OK Polygon.io: Configuré et valide")
+            else:
+                print("WARNING Polygon.io: Clé invalide (données historiques désactivées)")
+        except Exception as e:
+            print(f"WARNING Polygon.io: Erreur de validation ({str(e)[:50]}...)")
     else:
-        print("⚠️  Polygon.io: Non configuré (données historiques indisponibles)")
+        print("WARNING Polygon.io: Non configuré (données historiques indisponibles)")
         print(
-            "💡 Ajoutez POLYGON_API_KEY dans .env pour activer les données historiques"
+            "TIP Ajoutez POLYGON_API_KEY dans .env pour activer les données historiques"
         )
 
     openai_key = Config.get_openai_api_key()
     perplexity_key = Config.get_perplexity_api_key()
     if openai_key and not openai_key.startswith("your-"):
-        print("✅ OpenAI: Configuré")
+        print("OK OpenAI: Configuré")
     elif perplexity_key and not perplexity_key.startswith("your-"):
-        print("✅ Perplexity: Configuré")
+        print("OK Perplexity: Configuré")
     else:
-        print("⚠️  IA (OpenAI/Perplexity): Non configurée (analyse IA désactivée)")
+        print("WARNING IA (OpenAI/Perplexity): Non configurée (analyse IA désactivée)")
         print(
-            "💡 Ajoutez OPENAI_API_KEY ou PERPLEXITY_API_KEY dans .env pour activer l'IA"
+            "TIP Ajoutez OPENAI_API_KEY ou PERPLEXITY_API_KEY dans .env pour activer l'IA"
         )
 
     print()
     ui_path = Path("ui/index.html")
     if not ui_path.exists():
-        print("⚠️  Interface UI non trouvée dans ui/index.html")
-        print("💡 L'application démarrera avec l'API uniquement")
+        print("WARNING Interface UI non trouvée dans ui/index.html")
+        print("TIP L'application démarrera avec l'API uniquement")
         print()
 
-    print("🚀 Démarrage du serveur...")
-    print("📊 Interface: http://localhost:8000")
-    print("📚 API Docs: http://localhost:8000/api/docs")
-    print("🔗 WebSocket: ws://localhost:8000/ws")
+    print("START Démarrage du serveur...")
+
+    # Déterminer le port (par défaut 8001, ou du .env ou argument)
+    port = int(os.getenv("PORT", "8001"))
+    host = "127.0.0.1"
+
+    print(f"INTERFACE http://localhost:{port}")
+    print(f"DOCS http://localhost:{port}/api/docs")
+    print(f"WEBSOCKET ws://localhost:{port}/ws")
     print("=" * 60)
 
     try:
         # Lancement d'uvicorn avec l'app FastAPI
         uvicorn.run(
             "api.main:app",  # Module:variable depuis api/main.py
-            host="127.0.0.1",
-            port=8000,
+            host=host,
+            port=port,
             reload=True,  # Auto-reload en développement
             log_level="info",
-            # Ajout de headers pour développement
-            headers=[("X-FastAPI-App", "Options-Squeeze-Finder")],
         )
     except KeyboardInterrupt:
-        print("\n👋 Arrêt de l'application...")
+        print("\nBYE Arrêt de l'application...")
     except Exception:
         logger.exception("Erreur au démarrage de l'application")
         sys.exit(1)

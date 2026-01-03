@@ -75,6 +75,33 @@ class PolygonClient:
         
         print(f"🔗 Polygon.io client initialized (API: {api_key[:8]}...{api_key[-4:]})")
     
+    def validate_key(self) -> bool:
+        """Validate the API key by making a simple request"""
+        try:
+            # Try to get a simple market status endpoint (minimal data usage)
+            response = self.session.get(
+                f"{self.base_url}/v1/marketstatus/now",
+                params={'apikey': self.api_key},
+                timeout=10
+            )
+            
+            if response.status_code == 401:
+                print("❌ Polygon API Key Invalid (401 Unauthorized)")
+                return False
+            elif response.status_code == 403:
+                print("❌ Polygon API Access Forbidden (403)")
+                return False
+            elif response.status_code == 200:
+                print("✅ Polygon API Key Valid")
+                return True
+            else:
+                print(f"⚠️ Polygon API returned status {response.status_code}")
+                return response.status_code not in [401, 403]
+                
+        except Exception as e:
+            print(f"❌ Error validating Polygon key: {e}")
+            return False
+    
     def _rate_limit(self):
         """Apply rate limiting for free tier"""
         current_time = time.time()
@@ -111,6 +138,12 @@ class PolygonClient:
         except requests.exceptions.HTTPError as e:
             if response.status_code == 429:
                 print("❌ Rate limit exceeded. Consider upgrading your Polygon.io plan.")
+            elif response.status_code == 401:
+                print("❌ Authentication failed - Invalid Polygon.io API key")
+                raise ValueError("Invalid Polygon API key (401 Unauthorized)")
+            elif response.status_code == 403:
+                print("❌ Access forbidden - Check Polygon.io plan permissions")
+                raise ValueError("Polygon API access forbidden (403)")
             raise e
         except Exception as e:
             print(f"❌ Request failed: {e}")

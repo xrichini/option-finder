@@ -75,20 +75,28 @@ class HybridDataService:
         # Client Polygon.io (source historique optionnelle)
         self.polygon_client = None
         self.polygon_enabled = False
+        self.polygon_invalid_key = False  # Flag pour éviter les retries avec clé invalide
 
         if enable_polygon:
             try:
                 polygon_key = Config.get_polygon_api_key()
                 if polygon_key and not polygon_key.startswith("your_"):
                     self.polygon_client = PolygonClient(polygon_key)
-                    self.polygon_enabled = True
-                    logger.info("📊 Polygon.io client activé pour données historiques")
+                    
+                    # Valider la clé au démarrage
+                    if self.polygon_client.validate_key():
+                        self.polygon_enabled = True
+                        logger.info("📊 Polygon.io client activé pour données historiques")
+                    else:
+                        logger.warning("❌ Polygon.io clé invalide - données historiques désactivées")
+                        self.polygon_invalid_key = True
+                        self.polygon_client = None
                 else:
-                    logger.info(
-                        "📊 Polygon.io non configuré - utilisation Tradier seul"
-                    )
+                    logger.info("📊 Polygon.io non configuré - utilisation Tradier seul")
             except Exception as e:
                 logger.warning(f"📊 Polygon.io non disponible: {e}")
+                self.polygon_invalid_key = True
+                self.polygon_client = None
 
         # Cache pour optimiser les performances
         self.cache = {}
@@ -139,6 +147,10 @@ class HybridDataService:
         cached_data = self._get_from_cache(cache_key)
         if cached_data:
             return cached_data
+
+        # Si Polygon est désactivé ou la clé est invalide, retourner None
+        if not self.polygon_enabled or self.polygon_invalid_key:
+            return None
 
         try:
             # Récupération des barres historiques
@@ -212,6 +224,16 @@ class HybridDataService:
 
             return historical_data
 
+        except ValueError as e:
+            # Erreur d'authentification (401) - désactiver Polygon complètement
+            if "Invalid Polygon API key" in str(e) or "forbidden" in str(e).lower():
+                logger.error(f"❌ Polygon.io clé API invalide - désactivation complète: {e}")
+                self.polygon_enabled = False
+                self.polygon_invalid_key = True
+                self.polygon_client = None
+            else:
+                logger.warning(f"❌ Erreur Polygon {symbol}: {e}")
+            return None
         except Exception as e:
             logger.warning(f"❌ Erreur récupération données historiques {symbol}: {e}")
             return None
