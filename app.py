@@ -55,6 +55,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Servir les fichiers statiques (CSS, JS, images)
+try:
+    app.mount("/static", StaticFiles(directory="ui/static"), name="static")
+except Exception as e:
+    logger.warning(f"Could not mount static files: {e}")
+
 # Services
 screening_service = ScreeningService()
 config_service = ConfigService()
@@ -79,20 +85,24 @@ class ConnectionManager:
         logger.info(f"WebSocket connecté. Total: {total}")
 
     def disconnect(self, websocket: WebSocket):
-        # remove without awaiting lock for simplicity; called from finally blocks
+        # remove without awaiting lock for simplicity;
+        # called from finally blocks
         try:
             if websocket in self.active_connections:
                 self.active_connections.remove(websocket)
         except ValueError:
             pass
-        logger.info(f"WebSocket déconnecté. Total: {len(self.active_connections)}")
+        total = len(self.active_connections)
+        logger.info(f"WebSocket déconnecté. Total: {total}")
 
     async def send_personal_message(self, message: dict, websocket: WebSocket):
         try:
             await websocket.send_text(json.dumps(message))
         except WebSocketDisconnect:
             self.disconnect(websocket)
-            logger.info("WebSocketDisconnect lors de l'envoi d'un message personnel")
+            logger.info(
+                "WebSocketDisconnect lors de l'envoi d'un message"
+            )
         except Exception:
             logger.exception("Erreur lors de l'envoi d'un message WebSocket")
             self.disconnect(websocket)
@@ -176,7 +186,9 @@ async def load_symbols(request: SymbolRequest):
 
 
 @app.post("/api/screening/start")
-async def start_screening(request: ScreeningRequest, background_tasks: BackgroundTasks):
+async def start_screening(
+    request: ScreeningRequest, background_tasks: BackgroundTasks
+):
     """Démarre un screening en arrière-plan"""
 
     # Valider la requête
@@ -247,8 +259,9 @@ async def websocket_endpoint(websocket: WebSocket):
 
                 # Traiter différents types de messages
                 if message.get("type") == "ping":
+                    ts = datetime.now().isoformat()
                     await manager.send_personal_message(
-                        {"type": "pong", "timestamp": datetime.now().isoformat()},
+                        {"type": "pong", "timestamp": ts},
                         websocket,
                     )
 
@@ -256,14 +269,19 @@ async def websocket_endpoint(websocket: WebSocket):
                     session_id = message.get("session_id")
                     # Logique d'abonnement aux updates de screening
                     await manager.send_personal_message(
-                        {"type": "subscribed", "session_id": session_id}, websocket
+                        {
+                            "type": "subscribed",
+                            "session_id": session_id,
+                        },
+                        websocket,
                     )
 
             except WebSocketDisconnect:
                 break
             except json.JSONDecodeError:
+                msg = {"type": "error", "message": "Format invalide"}
                 await manager.send_personal_message(
-                    {"type": "error", "message": "Format JSON invalide"}, websocket
+                    msg, websocket
                 )
             except Exception as e:
                 logger.error(f"Erreur WebSocket: {e}")
@@ -299,6 +317,7 @@ async def run_screening_task(session_id: str, request: ScreeningRequest):
         async def progress_callback(
             current: int, total: int, symbol: str, details: str
         ):
+            pct = (current / total) * 100 if total > 0 else 0
             await manager.broadcast(
                 {
                     "type": "screening_progress",
@@ -308,7 +327,7 @@ async def run_screening_task(session_id: str, request: ScreeningRequest):
                         "total": total,
                         "symbol": symbol,
                         "details": details,
-                        "percentage": (current / total) * 100 if total > 0 else 0,
+                        "percentage": pct,
                     },
                 }
             )
@@ -336,13 +355,19 @@ async def run_screening_task(session_id: str, request: ScreeningRequest):
             }
         )
 
-        logger.info(f"Screening {session_id} terminé: {len(results)} résultats")
+        result_count = len(results)
+        logger.info(
+            f"Screening {session_id} terminé: {result_count} résultats"
+        )
 
     except Exception as e:
         logger.exception(f"Erreur screening {session_id}")
-        await manager.broadcast(
-            {"type": "screening_error", "session_id": session_id, "error": str(e)}
-        )
+        error_data = {
+            "type": "screening_error",
+            "session_id": session_id,
+            "error": str(e),
+        }
+        await manager.broadcast(error_data)
 
 
 # ==============================================================================

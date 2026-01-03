@@ -58,6 +58,11 @@ class Config:
         return cls._get_env("TRADIER_SANDBOX", "false").lower() == "true"
 
     @classmethod
+    def is_development_mode(cls) -> bool:
+        """Alias for is_sandbox() for backward compatibility"""
+        return cls.is_sandbox()
+
+    @classmethod
     def get_openai_api_key(cls) -> str:
         return cls._get_env("OPENAI_API_KEY", "")
 
