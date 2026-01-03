@@ -14,7 +14,6 @@ from models.api_models import (
     OptionsOpportunity,
 )
 from services.advanced_filtering_service import advanced_filtering_service
-from services.hybrid_screening_service import hybrid_screening_service
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +23,10 @@ filtering_router = APIRouter(prefix="/api/filtering", tags=["Filtering"])
 @filtering_router.get("/presets")
 async def get_filter_presets() -> Dict[str, FilterPreset]:
     """Get all available filter presets"""
-    return {name: preset for name, preset in advanced_filtering_service.get_all_presets().items()}
+    return {
+        name: preset
+        for name, preset in advanced_filtering_service.get_all_presets().items()
+    }
 
 
 @filtering_router.get("/presets/{preset_name}")
@@ -76,7 +78,7 @@ async def sort_opportunities(
 ) -> Dict[str, Any]:
     """
     Sort opportunities by various criteria
-    
+
     Supported fields: whale_score, volume, price, dte, delta, iv, oi, strike
     """
     sorted_opps = advanced_filtering_service.sort_opportunities(
@@ -99,12 +101,14 @@ async def filter_and_sort(
     ascending: bool = Query(False),
 ) -> Dict[str, Any]:
     """Apply filters and sort in one operation"""
-    
+
     # Apply filters (either preset or custom)
     if preset_name:
         filtered = advanced_filtering_service.apply_preset(opportunities, preset_name)
     elif filters:
-        filtered = advanced_filtering_service.filter_opportunities(opportunities, filters)
+        filtered = advanced_filtering_service.filter_opportunities(
+            opportunities, filters
+        )
     else:
         filtered = opportunities
 
@@ -153,9 +157,11 @@ async def delete_custom_preset(preset_name: str) -> Dict[str, Any]:
     return {
         "preset_name": preset_name,
         "deleted": success,
-        "message": f"Preset '{preset_name}' deleted successfully"
-        if success
-        else f"Could not delete preset '{preset_name}' (may be default or non-existent)",
+        "message": (
+            f"Preset '{preset_name}' deleted successfully"
+            if success
+            else f"Could not delete preset '{preset_name}' (may be default or non-existent)"
+        ),
     }
 
 
