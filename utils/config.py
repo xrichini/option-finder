@@ -17,17 +17,17 @@ class Config:
     DEFAULT_DTE: int = 7
     MAX_DTE: int = 45
 
-    # Production parameters
+    # Thresholds - Production (default)
     MIN_VOLUME_THRESHOLD_PROD: int = 1000
     MIN_OPEN_INTEREST_THRESHOLD_PROD: int = 1000
     VOLUME_OI_RATIO_THRESHOLD_PROD: float = 2.0
     MIN_WHALE_SCORE_PROD: int = 70
 
-    # Sandbox parameters
+    # Thresholds - Sandbox (dev/testing)
     MIN_VOLUME_THRESHOLD_SANDBOX: int = 10
-    MIN_OPEN_INTEREST_THRESHOLD_SANDBOX: int = 1
+    MIN_OPEN_INTEREST_THRESHOLD_SANDBOX: int = 10
     VOLUME_OI_RATIO_THRESHOLD_SANDBOX: float = 1.0
-    MIN_WHALE_SCORE_SANDBOX: int = 30
+    MIN_WHALE_SCORE_SANDBOX: int = 40
 
     DEFAULT_SHORT_INTEREST_THRESHOLD: float = 30.0
 
@@ -55,11 +55,12 @@ class Config:
 
     @classmethod
     def is_sandbox(cls) -> bool:
+        """Check if sandbox mode is enabled (default: False for production)."""
         return cls._get_env("TRADIER_SANDBOX", "false").lower() == "true"
 
     @classmethod
     def is_development_mode(cls) -> bool:
-        """Alias for is_sandbox() for backward compatibility"""
+        """Alias for is_sandbox() for backward compatibility."""
         return cls.is_sandbox()
 
     @classmethod
@@ -76,7 +77,7 @@ class Config:
 
     @classmethod
     def get_tradier_api_key(cls) -> str:
-        """Return the appropriate Tradier API key depending on sandbox flag."""
+        """Return the appropriate Tradier API key (sandbox or production)."""
         if cls.is_sandbox():
             return (
                 cls._get_env("TRADIER_API_KEY_SANDBOX")
@@ -157,8 +158,7 @@ class Config:
         tradier_key = cls.get_tradier_api_key()
         if not tradier_key:
             logger.warning(
-                "Tradier API key not configured. Set "
-                "TRADIER_API_KEY_PRODUCTION or TRADIER_API_KEY_SANDBOX"
+                "Tradier API key not configured. Set TRADIER_API_KEY_PRODUCTION or TRADIER_API_KEY_SANDBOX"
             )
             ok = False
 

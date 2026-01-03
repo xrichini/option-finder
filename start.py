@@ -62,14 +62,14 @@ def main():
 
     if not ok:
         print("⚠️  Configuration incomplète — " "vérifiez les variables d'environnement")
-        print(
-            "💡 Créez un fichier .env avec "
-            "TRADIER_API_KEY_SANDBOX et TRADIER_API_KEY_PRODUCTION"
-        )
+        print("💡 Créez un fichier .env avec " "TRADIER_API_KEY_PRODUCTION")
         print()
     else:
         env = Config.get_tradier_environment()
-        print("✅ Clé API Tradier configurée " f"(environnement: {env})")
+        sandbox_status = "sandbox (dev)" if Config.is_sandbox() else "production"
+        print("✅ Clé API Tradier configurée " f"(environnement: {sandbox_status})")
+        if not Config.is_sandbox():
+            print("💡 Pour utiliser sandbox en dev: TRADIER_SANDBOX=true dans .env")
 
     # Vérification de l'interface utilisateur
     ui_path = Path("ui/index.html")
