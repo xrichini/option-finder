@@ -24,9 +24,10 @@ from models.api_models import (
     SymbolRequest,
 )
 
-# Import des endpoints hybrides et short interest
+# Import des endpoints hybrides, short interest et filtres avancés
 from api.hybrid_endpoints import hybrid_router
 from api.short_interest_endpoints import short_interest_router
+from api.filtering_endpoints import filtering_router
 
 # Chargement des variables d'environnement
 from dotenv import load_dotenv
@@ -68,6 +69,7 @@ config_service = ConfigService()
 # Inclusion des routers hybrides et short interest
 app.include_router(hybrid_router)
 app.include_router(short_interest_router)
+app.include_router(filtering_router)
 
 
 # Gestionnaire de connections WebSocket

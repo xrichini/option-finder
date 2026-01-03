@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>🐋 Options Screener - Interface Trading</title>
+    <link rel="stylesheet" href="advanced-filters.css">
     <style>
         * {
             margin: 0;
@@ -2591,6 +2592,27 @@
             // Les types sont gérés par les checkboxes de la sidebar lors du scan
             console.log('applyTypeFilter appelé (fonction dépréciée)');
         }
+        
+        // Initialize advanced filtering and WebSocket
+        document.addEventListener('DOMContentLoaded', () => {
+            initializeAdvancedFilters();
+            
+            // Setup WebSocket for real-time updates
+            window.wsManager = new WebSocketManager((message) => {
+                console.log('WebSocket message received:', message);
+                if (message.type === 'opportunities') {
+                    currentOptions = message.opportunities;
+                    filteredOptions = currentOptions;
+                    renderOptions(currentOptions);
+                    updateFilterStats(currentOptions);
+                } else if (message.type === 'status') {
+                    console.log('Status:', message.status);
+                }
+            });
+            
+            window.wsManager.connect();
+        });
     </script>
+    <script src="advanced-filters.js"></script>
 </body>
 </html>
