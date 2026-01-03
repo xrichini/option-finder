@@ -88,7 +88,7 @@ def main():
         # Lancement d'uvicorn avec l'app FastAPI
         uvicorn.run(
             "api.main:app",  # Module:variable depuis api/main.py
-            host="0.0.0.0",
+            host="127.0.0.1",
             port=8000,
             reload=True,  # Auto-reload en développement
             log_level="info",
