@@ -877,20 +877,17 @@
         <!-- Contenu principal -->
         <main class="main-content">
             <header class="header">
-                <h1>🐋 Options Screener IA</h1>
-                <p>Screening IA (Top 15), Scan Complet, ou Pipeline Short Interest → Options</p>
+                <h1>🐋 Options Opportunity Detector</h1>
+                <p>Détection d'opportunités de squeeze via Short Interest → Analyse Options</p>
             </header>
 
             <div id="screeningModeInfo" class="screening-mode-info" style="margin-bottom: 15px; padding: 10px; background: rgba(66, 153, 225, 0.1); border-radius: 8px; text-align: center; font-size: 0.9rem; color: #63b3ed;">
-                📋 Mode: Symboles manuels | Utilisez les boutons ci-dessous pour lancer le screening
+                📊 Pipeline: Tickers (Short Interest) → Options Analysis → IA Deep Dive (si résultats)
             </div>
             
             <div class="controls">
-                <button class="btn btn-primary" onclick="getAIRecommendations()">🤖 Screening IA (Top 15)</button>
-                <button class="btn btn-primary" onclick="refreshData()">🔄 Scan Complet</button>
-                <button class="btn btn-primary" onclick="loadShortInterestSymbols()" style="background: linear-gradient(135deg, #e53e3e, #fc8181);">🎨 Short Interest → Options</button>
-                <button class="btn btn-primary" onclick="loadShortInterestWithAI()" style="background: linear-gradient(135deg, #9f7aea, #667eea);">🤖🎨 SI → Options → IA</button>
-                <button class="btn btn-secondary" onclick="testAI()" style="background: linear-gradient(135deg, #38a169, #68d391); font-size: 0.8em;">🧪 Test IA</button>
+                <button class="btn btn-primary" onclick="loadShortInterestSymbols()" style="background: linear-gradient(135deg, #e53e3e, #fc8181);">📊 Short Interest → Options</button>
+                <button class="btn btn-primary" id="aiAnalysisBtn" onclick="loadShortInterestWithAI()" style="background: linear-gradient(135deg, #9f7aea, #667eea); display: none;">🤖 AI Deep Dive Analysis</button>
             </div>
 
         <div class="filters">
@@ -1960,9 +1957,13 @@
         function clearResults() {
             const grid = document.getElementById('optionsGrid');
             const summary = document.getElementById('summary');
+            const aiBtn = document.getElementById('aiAnalysisBtn');
             
             grid.innerHTML = '';
             summary.style.display = 'none';
+            if (aiBtn) {
+                aiBtn.style.display = 'none';
+            }
             
             currentOptions = [];
             filteredOptions = [];
@@ -2455,6 +2456,14 @@
                 
                 updateSummary(screeningData);
                 renderOptions();
+                
+                // Afficher le bouton AI Deep Dive seulement s'il y a des résultats
+                const aiBtn = document.getElementById('aiAnalysisBtn');
+                if (opportunities.length > 0) {
+                    aiBtn.style.display = 'inline-block';
+                } else {
+                    aiBtn.style.display = 'none';
+                }
                 
                 // Réactiver les filtres
                 if (currentOptions.length > 0) {
