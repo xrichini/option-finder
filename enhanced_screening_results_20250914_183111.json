@@ -1,0 +1,59 @@
+{
+  "timestamp": "2025-09-14T18:30:55.616856",
+  "tickers_scanned": [
+    "SPY",
+    "QQQ"
+  ],
+  "summary": {
+    "timestamp": "2025-09-14T18:31:11.577995",
+    "total_tickers_analyzed": 2,
+    "market_anomalies_count": {
+      "volume": 0,
+      "trades": 0,
+      "combined": 0
+    },
+    "options_anomalies_count": 2,
+    "traditional_screening_count": 0,
+    "ai_enhanced_count": 0,
+    "total_signals": 2,
+    "top_signal": {
+      "ticker": "SPY",
+      "scores": {
+        "options_anomaly": 60.6514522107322
+      },
+      "total_score": 60.6514522107322,
+      "rank": 1,
+      "risk_level": "LOW"
+    },
+    "risk_distribution": {
+      "HIGH": 0,
+      "MEDIUM": 0,
+      "LOW": 2
+    },
+    "recommendations": [
+      "Options pricing anomalies suggest institutional activity",
+      "Focus on top-ranked signals for best opportunities"
+    ]
+  },
+  "combined_signals_count": 2,
+  "top_signals": [
+    {
+      "ticker": "SPY",
+      "scores": {
+        "options_anomaly": 60.6514522107322
+      },
+      "total_score": 60.6514522107322,
+      "rank": 1,
+      "risk_level": "LOW"
+    },
+    {
+      "ticker": "QQQ",
+      "scores": {
+        "options_anomaly": 57.20330429399038
+      },
+      "total_score": 57.20330429399038,
+      "rank": 2,
+      "risk_level": "LOW"
+    }
+  ]
+}

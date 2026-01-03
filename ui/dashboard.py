@@ -3,22 +3,21 @@ import streamlit as st
 import plotly.express as px
 import pandas as pd
 from data.screener_logic import OptionsScreener
+from data.enhanced_screener import EnhancedOptionsScreener
 from utils.config import Config
 from data.async_tradier import AsyncTradierClient
 from utils.async_utils import (
     run_async_in_streamlit, 
-    safe_async_run_with_fallback,
     cleanup_session_async_resources
 )
-import asyncio
 import time
 import atexit
-from typing import Optional
 
 
 class OptionsDashboard:
     def __init__(self):
         self.screener = OptionsScreener()
+        self.enhanced_screener = EnhancedOptionsScreener()
         self.tradier = self._get_or_create_async_client()
         self._init_session_state()
         
@@ -49,33 +48,57 @@ class OptionsDashboard:
             st.session_state.optionable_symbols = []
 
         # Paramètres scanner - utiliser setdefault pour éviter d'écraser
+        # Utilise les paramètres adaptés à l'environnement
         st.session_state.setdefault("max_dte", Config.DEFAULT_DTE)
-        st.session_state.setdefault("min_volume", Config.MIN_VOLUME_THRESHOLD)
-        st.session_state.setdefault("min_oi", Config.MIN_OPEN_INTEREST_THRESHOLD)
-        st.session_state.setdefault("min_whale_score", Config.MIN_WHALE_SCORE)
+        st.session_state.setdefault("min_volume", Config.get_min_volume_threshold())
+        st.session_state.setdefault("min_oi", Config.get_min_open_interest_threshold())
+        st.session_state.setdefault("min_whale_score", Config.get_min_whale_score())
         
         # Initialize other necessary state variables
         st.session_state.setdefault("enable_prefiltering", True)
         st.session_state.setdefault("min_market_cap", 100_000_000)
         st.session_state.setdefault("min_stock_volume", 500_000)
+        
+        # AI Analysis parameters
+        st.session_state.setdefault("ai_enabled", Config.has_ai_capabilities())
+        st.session_state.setdefault("ai_top_n", 5)
+        st.session_state.setdefault("show_ai_details", False)
 
     def run(self):
-        # Header avec style
+        # Header avec style et indication AI
+        ai_status = "🧠 IA Activée" if st.session_state.get('ai_enabled', False) and Config.has_ai_capabilities() else ""
+        
         st.markdown(
-            """
+            f"""
             <div style='text-align: center; padding: 1rem; margin-bottom: 2rem;
                 background: linear-gradient(90deg, #1f4e79, #2e7d32); 
                 border-radius: 10px;'>
                 <h1 style='color: white; margin: 0;'>
-                    🐋 Options Whale Screener
+                    🐋 Options Whale Screener {ai_status}
                 </h1>
                 <p style='color: #e8f5e8; margin: 0.5rem 0 0 0;'>
-                    Détection des Big Calls & Puts Buying avec HighShortInterest.com
+                    Détection des Big Calls & Puts avec Analyse IA (OpenAI + Perplexity)
                 </p>
             </div>
             """,
             unsafe_allow_html=True,
         )
+        
+        # Indicateur d'environnement
+        if Config.is_development_mode():
+            st.info(
+                f"🏠 **Mode Développement (Sandbox)** - Paramètres adaptés aux données de test : "
+                f"Volume min: {Config.get_min_volume_threshold()}, "
+                f"OI min: {Config.get_min_open_interest_threshold()}, "
+                f"Whale score: {Config.get_min_whale_score()}"
+            )
+        else:
+            st.success(
+                f"🚀 **Mode Production** - Paramètres stricts pour données réelles : "
+                f"Volume min: {Config.get_min_volume_threshold()}, "
+                f"OI min: {Config.get_min_open_interest_threshold()}, "
+                f"Whale score: {Config.get_min_whale_score()}"
+            )
 
         # Sidebar configuration
         self.render_sidebar()
@@ -124,30 +147,135 @@ class OptionsDashboard:
         # Set prefiltering to always True
         st.session_state.enable_prefiltering = True
         
-        st.sidebar.markdown("**Options scanning**")
+        st.sidebar.markdown("**Filtrage des options**")
         # Essential options scanning parameters
+        
+        # DTE parameter (restored to UI)
+        st.session_state.max_dte = st.sidebar.slider(
+            "📅 DTE maximum",
+            min_value=1,
+            max_value=21,
+            value=int(Config.DEFAULT_DTE),
+            step=1,
+            help="Jours jusqu'à expiration maximum"
+        )
+        
+        # Open Interest threshold
+        st.session_state.min_oi = st.sidebar.number_input(
+            "📈 Open Interest minimum",
+            min_value=0,
+            max_value=5000,
+            value=int(Config.get_min_open_interest_threshold()),
+            step=50,
+            help="Open Interest minimum requis"
+        )
+        
         st.session_state.min_volume = st.sidebar.number_input(
             "📈 Volume option minimum",
-            min_value=500,
+            min_value=10 if Config.is_development_mode() else 500,
             max_value=10000,
-            value=int(Config.MIN_VOLUME_THRESHOLD),
-            step=100,
-            help="Volume minimum requis pour détecter une option"
+            value=int(Config.get_min_volume_threshold()),
+            step=10 if Config.is_development_mode() else 100,
+            help="Volume minimum requis"
         )
 
         st.session_state.min_whale_score = st.sidebar.slider(
             "🐋 Score Whale minimum",
-            min_value=60,
+            min_value=30 if Config.is_development_mode() else 60,
             max_value=95,
-            value=int(Config.MIN_WHALE_SCORE),
+            value=int(Config.get_min_whale_score()),
             step=5,
             help="Score minimum pour considérer une option comme 'whale activity'"
         )
         
-        # Additional scanning parameters (now directly in main section, not in expander)
-        st.session_state.min_oi = Config.MIN_OPEN_INTEREST_THRESHOLD
-        st.session_state.max_dte = Config.DEFAULT_DTE
+        # Vol/OI ratio filter
+        st.session_state.min_vol_oi_ratio = st.sidebar.slider(
+            "📊 Min Vol/OI Ratio",
+            min_value=0.0,
+            max_value=5.0,
+            value=1.0,
+            step=0.1,
+            help="Volume > Open Interest indique nouveaux contrats (méthodologie Unusual Whales)"
+        )
+        
+        # Large block threshold
+        st.session_state.min_whale_block = st.sidebar.selectbox(
+            "🐋 Min Whale Block Size",
+            options=[5000, 7500, 10000, 15000],
+            index=0,
+            help="Volume minimum pour considérer comme activité institutionnelle"
+        )
+        
+        # Filter for new positions only
+        st.session_state.filter_new_positions_only = st.sidebar.checkbox(
+            "✅ Nouvelles positions uniquement",
+            value=False,
+            help="Afficher seulement les contrats avec Vol/OI >= 1.0"
+        )
+        
+        # AI Analysis Section
+        self._render_ai_controls()
 
+
+    def _render_ai_controls(self):
+        """Affiche les contrôles AI dans la sidebar"""
+        st.sidebar.markdown("### 🧠 Intelligence Artificielle")
+        
+        if Config.has_ai_capabilities():
+            # Enable/Disable AI Analysis
+            ai_enabled = st.sidebar.checkbox(
+                "Activer l'analyse AI",
+                value=st.session_state.get('ai_enabled', True),
+                help="Active l'analyse fondamentale et sentiment pour les meilleures options"
+            )
+            st.session_state.ai_enabled = ai_enabled
+            
+            if ai_enabled:
+                # Number of options to analyze with AI
+                ai_top_n = st.sidebar.slider(
+                    "Nombre d'analyses AI",
+                    min_value=1,
+                    max_value=10,
+                    value=st.session_state.get('ai_top_n', 5),
+                    help="Nombre de meilleures options à analyser avec l'IA"
+                )
+                st.session_state.ai_top_n = ai_top_n
+                
+                # Show AI details
+                show_ai_details = st.sidebar.checkbox(
+                    "Afficher détails AI",
+                    value=st.session_state.get('show_ai_details', False),
+                    help="Afficher les détails de l'analyse IA dans les résultats"
+                )
+                st.session_state.show_ai_details = show_ai_details
+                
+                # AI Status
+                with st.sidebar.expander("🔧 Statut des APIs IA"):
+                    openai_status = "✅" if Config.get_openai_api_key() else "❌"
+                    perplexity_status = "✅" if Config.get_perplexity_api_key() else "❌"
+                    
+                    st.write(f"**OpenAI API:** {openai_status}")
+                    st.write(f"**Perplexity API:** {perplexity_status}")
+                    
+                    if not Config.get_openai_api_key():
+                        st.warning("⚠️ Configurez OPENAI_API_KEY pour l'analyse fondamentale")
+                    if not Config.get_perplexity_api_key():
+                        st.warning("⚠️ Configurez PERPLEXITY_API_KEY pour l'analyse sentiment/news")
+                    
+                    # AI capabilities info
+                    ai_caps = self.enhanced_screener.get_ai_capabilities_status()
+                    st.write(f"**IA Activée:** {'✅' if ai_caps['ai_enabled'] else '❌'}")
+                    
+            else:
+                st.sidebar.info("💡 L'analyse IA est désactivée")
+        else:
+            st.sidebar.info(
+                "💡 **Configuration requise**\n\n"
+                "Configurez les clés API pour activer l'IA:\n"
+                "- OPENAI_API_KEY\n"
+                "- PERPLEXITY_API_KEY"
+            )
+            st.session_state.ai_enabled = False
 
     def render_sidebar_buttons(self):
         """Affiche seulement l'état et les paramètres dans la sidebar"""
@@ -159,21 +287,15 @@ class OptionsDashboard:
                 f"✅ **{len(optionable_symbols)}** symboles chargés\n\n"
                 "📈 Utilisez les contrôles de la page principale"
             )
-            
-            # Debug info in collapsible expander
-            with st.sidebar.expander("🔍 Debug Info", expanded=False):
-                raw_symbols = st.session_state.get('raw_symbols', [])
-                st.write(f"Raw: {len(raw_symbols)}, Optionable: {len(optionable_symbols)}")
-                st.write(f"Samples: {optionable_symbols[:3] if optionable_symbols else 'None'}")
         else:
             st.sidebar.info(
-                "📝 **Configuration uniquement**\n\n"
+                "📋 **Configuration uniquement**\n\n"
                 "Les contrôles principaux sont sur la page principale"
             )
     
     def render_main_controls(self):
         """Affiche les contrôles principaux sur la page principale"""
-        st.markdown("## 🎯 Contrôles")
+        st.markdown("## 🎯 Symboles")
         
         # Status and load section
         col1, col2, col3 = st.columns([2, 1, 1])
@@ -228,7 +350,7 @@ class OptionsDashboard:
                 st.success(f"✅ **{len(symbols)} symboles** chargés avec succès!")
                 st.rerun()
             else:
-                st.error("❌ Aucun symbole trouvé - la fonction a retourné une liste vide")
+                st.error("❌ Aucun symbole trouvé")
                 
         except Exception as e:
             st.error(f"❌ Erreur lors du chargement: {str(e)}")
@@ -336,7 +458,7 @@ class OptionsDashboard:
             processed_symbols = 0
             total_options_found = 0
             last_update_time = 0
-            update_interval = 0.5  # Mise à jour toutes les 500ms minimum
+            update_interval = 1  # Mise à jour toutes les 1s
             
             def update_progress(symbol_idx, symbol_name, options_found, current_details=""):
                 nonlocal processed_symbols, total_options_found, last_update_time
@@ -406,8 +528,60 @@ class OptionsDashboard:
         if not should_scan and (not is_scanning or current_scan_type != option_type):
             self._render_results_section(option_type)
     
+    async def _run_enhanced_screening_with_ai(self, option_type, symbols, progress_callback=None):
+        """Exécute le screening avec analyse AI intégrée"""
+        
+        # Wrapper pour convertir progress_callback du format Streamlit vers le format attendu
+        def ai_progress_callback(progress_float, message):
+            if progress_callback:
+                # Convertir le progrès de 0.0-1.0 vers les paramètres attendus
+                total_symbols = len(symbols)
+                current_idx = int(progress_float * total_symbols)
+                current_symbol = symbols[min(current_idx, len(symbols)-1)] if symbols else "N/A"
+                progress_callback(current_idx, current_symbol, 0, message)
+        
+        try:
+            # Utiliser le screener AI
+            results = await self.enhanced_screener.screen_with_ai_analysis(
+                symbols=symbols,
+                option_type=option_type,
+                max_dte=st.session_state.get('max_dte', 7),
+                min_volume=st.session_state.get('min_volume', Config.get_min_volume_threshold()),
+                min_oi=st.session_state.get('min_oi', Config.get_min_open_interest_threshold()),
+                min_whale_score=st.session_state.get('min_whale_score', Config.get_min_whale_score()),
+                enable_ai_for_top_n=st.session_state.get('ai_top_n', 5) if st.session_state.get('ai_enabled', False) else 0,
+                progress_callback=ai_progress_callback
+            )
+            
+            # Générer une stratégie de portefeuille si IA activée
+            if st.session_state.get('ai_enabled', False) and results:
+                if progress_callback:
+                    progress_callback(len(symbols)-1, "Portfolio", 0, "🧠 Génération stratégie IA...")
+                
+                portfolio_strategy = await self.enhanced_screener.generate_portfolio_strategy(results)
+                st.session_state[f'portfolio_strategy_{option_type}'] = portfolio_strategy
+            
+            return results
+            
+        except Exception as e:
+            if progress_callback:
+                progress_callback(0, "Error", 0, f"❌ Erreur: {str(e)}")
+            print(f"Erreur dans le screening AI: {e}")
+            return []
+    
     def _run_enhanced_screening(self, option_type, symbols, progress_callback=None):
-        """Exécute le screening avec progression en temps réel"""
+        """Exécute le screening avec progression en temps réel (version synchrone de fallback)"""
+        # Si IA activée, utiliser la version async
+        if st.session_state.get('ai_enabled', False):
+            try:
+                return run_async_in_streamlit(
+                    self._run_enhanced_screening_with_ai(option_type, symbols, progress_callback)
+                )
+            except Exception as e:
+                st.error(f"Erreur screening AI: {e}")
+                # Fallback vers screening classique
+        
+        # Screening classique
         all_results = []
         
         for idx, symbol in enumerate(symbols):
@@ -436,14 +610,14 @@ class OptionsDashboard:
                 
                 # Filtrer par DTE
                 filtered_exps = self.screener.client.filter_expirations_by_dte(
-                    expirations, st.session_state.max_dte
+                    expirations, st.session_state.get('max_dte', 7)
                 )
                 
                 if not filtered_exps:
                     if progress_callback:
                         progress_callback(
                             idx, symbol, 0, 
-                            f"⚠️ {symbol}: Pas d'expirations < {st.session_state.max_dte} DTE"
+                            f"⚠️ {symbol}: Pas d'expirations < {st.session_state.get('max_dte', 7)} DTE"
                         )
                     continue
                 
@@ -473,8 +647,8 @@ class OptionsDashboard:
                         options = [
                             opt for opt in chain_data
                             if (opt["option_type"].lower() == option_type
-                                and opt["volume"] >= st.session_state.min_volume
-                                and opt["open_interest"] >= st.session_state.min_oi)
+                                and opt["volume"] >= st.session_state.get('min_volume', Config.get_min_volume_threshold())
+                                and opt["open_interest"] >= st.session_state.get('min_oi', Config.get_min_open_interest_threshold()))
                         ]
                         
                         if progress_callback:
@@ -487,7 +661,7 @@ class OptionsDashboard:
                         for opt in options:
                             try:
                                 result = self.screener._process_option(
-                                    opt, symbol, option_type, st.session_state.min_whale_score
+                                    opt, symbol, option_type, st.session_state.get('min_whale_score', Config.get_min_whale_score())
                                 )
                                 if result:
                                     symbol_results.append(result)
@@ -725,17 +899,21 @@ class OptionsDashboard:
             return []
     
     def _render_results_section(self, option_type: str):
-        """Affiche la section des résultats avec workflow amélioré"""
+        """Affiche la section des résultats avec support AI intégré"""
         results_key = f"{option_type}_results"
+        portfolio_key = f"portfolio_strategy_{option_type}"
         
         # Interface de contrôle contextuelle
         col1, col2, col3 = st.columns([2, 1, 1])
         with col1:
-            st.markdown(f"### 📋 Résultats {option_type.title()}")
+            ai_indicator = "🧠" if st.session_state.get('ai_enabled', False) else ""
+            st.markdown(f"### 📋 Résultats {option_type.title()} {ai_indicator}")
         
         with col2:
             # Bouton scanner contextuel avec clé unique
             scan_label = f"🔄 Scanner {option_type.title()}"
+            if st.session_state.get('ai_enabled', False):
+                scan_label += " + IA"
             scan_key = f"scan_{option_type}_btn"
             if st.button(scan_label, type="primary", use_container_width=True, key=scan_key):
                 # Vérifier que les symboles sont disponibles
@@ -743,10 +921,11 @@ class OptionsDashboard:
                 if not optionable_symbols:
                     st.warning("⚠️ Chargez d'abord des symboles avec le bouton '🚀 Charger Symboles' ci-dessus")
                 else:
-                    st.info(f"🚀 Démarrage du scan {option_type.title()} avec {len(optionable_symbols)} symboles...")
+                    ai_msg = " avec analyse IA" if st.session_state.get('ai_enabled', False) else ""
+                    st.info(f"🚀 Démarrage du scan {option_type.title()}{ai_msg} avec {len(optionable_symbols)} symboles...")
                     # Démarrer le scan pour ce type d'option spécifique
                     st.session_state.trigger_scan = option_type
-                    st.session_state.scan_requested_tab = option_type  # Track which tab requested the scan
+                    st.session_state.scan_requested_tab = option_type
                     st.rerun()
         
         with col3:
@@ -755,90 +934,44 @@ class OptionsDashboard:
             if st.button(f"🧹 Clear {option_type.title()}", use_container_width=True, key=clear_key):
                 if results_key in st.session_state:
                     del st.session_state[results_key]
+                if portfolio_key in st.session_state:
+                    del st.session_state[portfolio_key]
                 st.rerun()
+        
+        # Afficher la stratégie de portefeuille AI si disponible
+        if portfolio_key in st.session_state:
+            self._render_portfolio_strategy(st.session_state[portfolio_key])
         
         # Afficher les résultats s'ils existent
         if results_key in st.session_state:
             results = st.session_state[results_key]
 
             if results:
-                # Badge du nombre de résultats
-                st.success(f"🎉 {len(results)} opportunités détectées pour {option_type}!")
+                # Badge du nombre de résultats avec AI info
+                ai_results_count = sum(1 for r in results if hasattr(r, '_ai_analysis') and r._ai_analysis)
+                result_msg = f"🎉 {len(results)} opportunités détectées pour {option_type}"
+                if ai_results_count > 0:
+                    result_msg += f" (dont {ai_results_count} avec analyse IA 🧠)"
+                st.success(result_msg)
 
-                # Créer le DataFrame avec les colonnes exactes demandées
-                df_display = pd.DataFrame(
-                    [
-                        {
-                            "Symbol": result.symbol,
-                            "Side": result.side.title(),
-                            "Strike": f"${result.strike:.0f}",
-                            "Volume 1J": result.volume_1d,
-                            "Vol/OI": (
-                                f"{result.volume_1d/result.open_interest:.1f}"
-                                if result.open_interest > 0
-                                else "N/A"
-                            ),
-                            "Delta": f"{result.delta:.2f}",
-                            "DTE": result.dte,
-                            "Whale Score": result.whale_score,
-                        }
-                        for result in results
-                    ]
-                )
-
-                # Tableau des résultats
-                st.dataframe(df_display, width="stretch")
+                # Tableau avec colonnes AI
+                self._render_enhanced_results_table(results)
 
                 # Graphiques en 2 colonnes
                 col1, col2 = st.columns(2)
 
                 with col1:
-                    # Top 10 par Whale Score
-                    fig1 = px.bar(
-                        df_display.head(10),
-                        x="Symbol",
-                        y="Whale Score",
-                        title="🏆 Top 10 par Whale Score",
-                        color="Whale Score",
-                        color_continuous_scale="Viridis",
-                    )
-                    fig1.update_layout(showlegend=False)
-                    st.plotly_chart(fig1, width="stretch")
+                    self._render_whale_score_chart(results)
 
                 with col2:
-                    # Distribution par DTE
-                    dte_counts = (
-                        pd.DataFrame(results)[["dte"]].value_counts().reset_index()
-                    )
-                    dte_counts.columns = ["DTE", "Count"]
+                    self._render_dte_distribution_chart(results)
 
-                    fig2 = px.pie(
-                        dte_counts,
-                        values="Count",
-                        names="DTE",
-                        title="📅 Distribution par DTE",
-                    )
-                    st.plotly_chart(fig2, width="stretch")
-
-                # Métriques en bas
-                col1, col2, col3, col4 = st.columns(4)
-
-                with col1:
-                    scores = [r.whale_score for r in results]
-                    avg_whale_score = sum(scores) / len(scores)
-                    st.metric("Score Whale Moyen", f"{avg_whale_score:.1f}")
-
-                with col2:
-                    total_volume = sum(r.volume_1d for r in results)
-                    st.metric("Volume Total (1J)", f"{total_volume:,}")
-
-                with col3:
-                    total_oi = sum(r.open_interest for r in results)
-                    st.metric("Open Interest Total", f"{total_oi:,}")
-
-                with col4:
-                    avg_dte = sum(r.dte for r in results) / len(results)
-                    st.metric("DTE Moyen", f"{avg_dte:.1f}")
+                # Métriques améliorées
+                self._render_enhanced_metrics(results)
+                
+                # Détails AI si activés
+                if st.session_state.get('show_ai_details', False) and ai_results_count > 0:
+                    self._render_ai_analysis_details(results)
 
             else:
                 message = (
@@ -848,3 +981,208 @@ class OptionsDashboard:
                 st.info(message)
         else:
             st.info("👆 Configurez et cliquez sur SCANNER pour commencer")
+    
+    def _render_portfolio_strategy(self, strategy):
+        """Affiche la stratégie de portefeuille générée par IA"""
+        st.subheader("🧠 Stratégie de Portefeuille IA")
+        
+        col1, col2 = st.columns([3, 1])
+        
+        with col1:
+            st.write(f"**Stratégie:** {strategy['strategy_summary']}")
+            
+            if strategy['recommendations']:
+                st.write("**Recommandations:**")
+                for rec in strategy['recommendations']:
+                    st.write(f"• {rec}")
+        
+        with col2:
+            confidence = strategy['confidence']
+            st.metric("Confiance IA", f"{confidence}%", delta=None)
+            
+            if confidence > 80:
+                st.success("Haute Confiance")
+            elif confidence > 60:
+                st.warning("Confiance Moyenne")
+            else:
+                st.error("Faible Confiance")
+        
+        # Facteurs de risque
+        if strategy['risk_factors']:
+            with st.expander("⚠️ Facteurs de Risque"):
+                for risk in strategy['risk_factors']:
+                    st.write(f"• {risk}")
+        
+        # Analyse détaillée
+        if strategy.get('detailed_analysis'):
+            with st.expander("📈 Analyse Détaillée"):
+                st.json(strategy['detailed_analysis'])
+        
+        st.divider()
+    
+    def _render_enhanced_results_table(self, results):
+        """Affiche le tableau de résultats avec colonnes AI"""
+        # Préparer les données avec colonnes AI
+        display_data = []
+        for result in results:
+            row = {
+                "Symbol": result.symbol,
+                "Side": result.side.title(),
+                "Strike": f"${result.strike:.0f}",
+                "Volume 1J": f"{result.volume_1d:,}",
+                "Vol/OI": f"{result.vol_oi_ratio:.2f}" if result.open_interest > 0 else "∞",
+                "Block Size": result.block_size_category,
+                "New Position": "✅" if result.is_new_position else "⟖",
+                "DTE": result.dte,
+                "Whale Score": f"{result.whale_score:.1f}",
+                "Historique": result.volume_vs_average_display,
+                "Anomalie": result.anomaly_badge,
+            }
+            
+            # Ajouter colonnes AI si disponible
+            if hasattr(result, '_ai_analysis') and result._ai_analysis:
+                row["IA Summary"] = result.ai_summary_display[:50] + "..." if len(result.ai_summary_display) > 50 else result.ai_summary_display
+                row["IA Badge"] = result.ai_badge
+            else:
+                row["IA Summary"] = "N/A"
+                row["IA Badge"] = ""
+            
+            display_data.append(row)
+        
+        # Afficher le tableau avec configuration des colonnes
+        st.dataframe(
+            display_data,
+            use_container_width=True,
+            column_config={
+                'Whale Score': st.column_config.ProgressColumn(
+                    'Whale Score',
+                    min_value=0,
+                    max_value=100,
+                    format="%.1f"
+                )
+            }
+        )
+    
+    def _render_whale_score_chart(self, results):
+        """Affiche le graphique des whale scores"""
+        df_chart = pd.DataFrame([{
+            "Symbol": result.symbol,
+            "Whale Score": result.whale_score,
+            "AI Enhanced": "Avec IA" if (hasattr(result, '_ai_analysis') and result._ai_analysis) else "Standard"
+        } for result in results[:10]])
+        
+        fig = px.bar(
+            df_chart,
+            x="Symbol",
+            y="Whale Score",
+            title="🏆 Top 10 par Whale Score",
+            color="AI Enhanced",
+            color_discrete_map={"Avec IA": "#FF6B35", "Standard": "#004E89"}
+        )
+        fig.update_layout(showlegend=True)
+        st.plotly_chart(fig, use_container_width=True)
+    
+    def _render_dte_distribution_chart(self, results):
+        """Affiche le graphique de distribution DTE"""
+        dte_counts = pd.DataFrame(results)[["dte"]].value_counts().reset_index()
+        dte_counts.columns = ["DTE", "Count"]
+        
+        fig = px.pie(
+            dte_counts,
+            values="Count",
+            names="DTE",
+            title="📅 Distribution par DTE",
+        )
+        st.plotly_chart(fig, use_container_width=True)
+    
+    def _render_enhanced_metrics(self, results):
+        """Affiche les métriques améliorées avec AI"""
+        col1, col2, col3, col4, col5 = st.columns(5)
+
+        with col1:
+            scores = [r.whale_score for r in results]
+            avg_whale_score = sum(scores) / len(scores)
+            st.metric("Score Whale Moyen", f"{avg_whale_score:.1f}")
+
+        with col2:
+            total_volume = sum(r.volume_1d for r in results)
+            st.metric("Volume Total (1J)", f"{total_volume:,}")
+
+        with col3:
+            new_positions = sum(1 for r in results if r.is_new_position)
+            st.metric("Nouvelles Positions", f"{new_positions}/{len(results)}")
+        
+        with col4:
+            whale_blocks = sum(1 for r in results if r.volume_1d >= 10000)
+            st.metric("🐋 Whale Blocks", f"{whale_blocks}")
+
+        with col5:
+            ai_enhanced = sum(1 for r in results if hasattr(r, '_ai_analysis') and r._ai_analysis)
+            st.metric("🧠 IA Enhanced", f"{ai_enhanced}")
+    
+    def _render_ai_analysis_details(self, results):
+        """Affiche les détails de l'analyse IA"""
+        st.subheader("🤖 Détails Analyse IA")
+        
+        ai_results = [r for r in results if hasattr(r, '_ai_analysis') and r._ai_analysis]
+        
+        for result in ai_results[:5]:  # Limiter aux 5 premiers
+            with st.expander(f"📈 {result.symbol} - {result.option_symbol}"):
+                ai_analysis = result._ai_analysis
+                
+                # Créer des onglets pour les différents types d'analyse
+                tabs = st.tabs(["Fondamental", "Sentiment", "Catalyseurs"])
+                
+                # Analyse fondamentale
+                with tabs[0]:
+                    if 'fundamental' in ai_analysis:
+                        fund = ai_analysis['fundamental']
+                        st.write(f"**Résumé:** {fund.summary}")
+                        st.write(f"**Confiance:** {fund.confidence_score}%")
+                        
+                        if fund.recommendations:
+                            st.write("**Recommandations:**")
+                            for rec in fund.recommendations:
+                                st.write(f"• {rec}")
+                        
+                        if fund.detailed_analysis:
+                            with st.expander("Détails techniques"):
+                                st.json(fund.detailed_analysis)
+                    else:
+                        st.info("Analyse fondamentale non disponible")
+                
+                # Analyse de sentiment
+                with tabs[1]:
+                    if 'sentiment' in ai_analysis:
+                        sentiment = ai_analysis['sentiment']
+                        sentiment_score = sentiment.detailed_analysis.get('sentiment_score', 50)
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.metric("Score Sentiment", f"{sentiment_score}/100")
+                        with col2:
+                            if sentiment_score > 60:
+                                st.success("Haussier")
+                            elif sentiment_score < 40:
+                                st.error("Baissier")
+                            else:
+                                st.warning("Neutre")
+                        
+                        st.write(f"**Analyse:** {sentiment.summary}")
+                    else:
+                        st.info("Analyse de sentiment non disponible")
+                
+                # Catalyseurs
+                with tabs[2]:
+                    if 'catalysts' in ai_analysis:
+                        catalysts = ai_analysis['catalysts']
+                        catalyst_data = catalysts.detailed_analysis.get('catalysts', [])
+                        
+                        if catalyst_data:
+                            for catalyst in catalyst_data:
+                                sentiment_emoji = "🟢" if catalyst['impact_sentiment'] == 'bullish' else "🔴" if catalyst['impact_sentiment'] == 'bearish' else "🟡"
+                                st.write(f"{sentiment_emoji} **{catalyst['event_type'].title()}:** {catalyst['description']}")
+                        else:
+                            st.info("Aucun catalyseur récent trouvé")
+                    else:
+                        st.info("Analyse des catalyseurs non disponible")

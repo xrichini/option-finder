@@ -1,19 +1,22 @@
 # tradier_client.py
 import requests
-import pandas as pd
-from typing import Dict, List, Optional, Tuple
-from datetime import datetime, timedelta
+from typing import Dict, List
+from datetime import datetime
 from utils.config import Config
 
 
 class TradierClient:
     def __init__(self):
-        self.api_key = Config.TRADIER_API_KEY
-        self.base_url = Config.TRADIER_BASE_URL
+        self.api_key = Config.get_tradier_api_key()  # Clé automatique selon l'environnement
+        self.base_url = Config.get_tradier_base_url()  # URL automatique selon l'environnement
+        self.environment = Config.get_tradier_environment()
         self.headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Accept": "application/json",
         }
+        
+        # Log de l'environnement pour clarity
+        print(f"🔗 Tradier client initialisé (environnement: {self.environment})")
 
     def get_option_expirations(self, symbol: str) -> List[str]:
         """Récupère les dates d'expiration disponibles"""
@@ -53,6 +56,17 @@ class TradierClient:
 
     def get_option_chains(self, symbol: str, expiration: str) -> List[Dict]:
         """Récupère la chaîne d'options pour un symbole et expiration donnés"""
+        # En mode sandbox, l'expiration est obligatoire
+        if Config.is_development_mode() and not expiration:
+            # Récupérer d'abord les expirations disponibles
+            expirations = self.get_option_expirations(symbol)
+            if not expirations:
+                print(f"Aucune expiration trouvée pour {symbol}")
+                return []
+            # Utiliser la première expiration disponible
+            expiration = expirations[0]
+            print(f"Mode sandbox: utilisation automatique de l'expiration {expiration} pour {symbol}")
+        
         url = f"{self.base_url}/markets/options/chains"
         params = {
             "symbol": symbol,

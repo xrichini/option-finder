@@ -2,7 +2,7 @@
 import pytest
 from utils.helpers import get_high_short_interest_symbols
 import pandas as pd
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 
 @pytest.fixture

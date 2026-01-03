@@ -1,13 +1,20 @@
-# Core Streamlit and web framework
-streamlit==1.28.1
+# Options Squeeze Finder - FastAPI Backend
+# Version moderne remplaçant Streamlit
+
+# API Framework
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+websockets==12.0
+
+# Core dependencies
+httpx==0.25.2
+pydantic==2.5.0
+python-dotenv==1.0.0
 requests==2.31.0
 
 # Data processing and analysis
 pandas==2.1.1
 numpy==1.24.3
-
-# Visualization
-plotly==5.17.0
 
 # Financial data and web scraping
 yfinance==0.2.18
@@ -18,13 +25,15 @@ lxml==4.9.3
 aiohttp==3.9.1
 nest-asyncio==1.5.8
 
-# Configuration and environment
-python-dotenv==1.0.0
-
 # AI/ML APIs (optional)
 openai==1.3.7
 
-# Testing and development
-pytest>=7.0.0
-pytest-asyncio>=0.21.0
+# Utilitaires FastAPI
+python-multipart==0.0.6  # Pour les uploads de fichiers
+aiofiles==23.2.1         # Pour les fichiers async
+structlog==23.2.0         # Logging structuré
+
+# Testing et développement
+pytest==7.4.3
+pytest-asyncio==0.21.1
 pytest-mock>=3.10.0

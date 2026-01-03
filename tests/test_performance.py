@@ -99,7 +99,7 @@ class PerformanceTester:
 
     async def test_cache_efficiency(self, symbols: List[str]) -> Dict:
         """Test caching efficiency"""
-        print(f"\n💾 Testing cache efficiency...")
+        print("\n💾 Testing cache efficiency...")
         
         client = AsyncTradierClient(max_concurrent=10, rate_limit=0.1)
         
@@ -206,25 +206,25 @@ class PerformanceTester:
         
         if 'prefiltering' in self.results:
             pf = self.results['prefiltering']
-            print(f"🎯 Pre-filtering:")
+            print("🎯 Pre-filtering:")
             print(f"   • Reduced symbols by {pf['reduction_percentage']:.1f}%")
             print(f"   • Time: {pf['total_time']:.2f}s")
         
         if 'async_filtering' in self.results:
             af = self.results['async_filtering']
-            print(f"⚡ Async filtering:")
+            print("⚡ Async filtering:")
             print(f"   • Average time: {af['avg_time']:.2f}s")
             print(f"   • Best time: {af['min_time']:.2f}s")
         
         if 'caching' in self.results:
             cache = self.results['caching']
-            print(f"💾 Caching:")
+            print("💾 Caching:")
             print(f"   • Speedup: {cache['speedup_factor']:.2f}x")
             print(f"   • Efficiency: {cache['cache_hit_efficiency']:.1f}%")
         
         if 'screening' in self.results:
             screen = self.results['screening']
-            print(f"🔍 Screening:")
+            print("🔍 Screening:")
             print(f"   • Time per symbol: {screen['avg_time_per_symbol']:.2f}s")
             print(f"   • Options found: {screen['options_found']}")
         

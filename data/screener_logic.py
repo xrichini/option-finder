@@ -1,21 +1,53 @@
 # screener_logic.py
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 from datetime import datetime
 import asyncio
+import os
 from models.option_model import OptionScreenerResult
 from data.tradier_client import TradierClient
 from data.async_tradier import AsyncTradierClient
+from data.historical_data_manager import HistoricalDataManager
 from utils.config import Config
-import streamlit as st
 
 
 class OptionsScreener:
-    def __init__(self, use_async: bool = True):
+    def __init__(self, use_async: bool = True, enable_historical: bool = True):
         self.config = Config()
         self.client = TradierClient()
         self.async_client = AsyncTradierClient(max_concurrent=8, rate_limit=0.08) if use_async else None
         self.use_async = use_async
+        self.historical_manager = HistoricalDataManager() if enable_historical else None
+        self.enable_historical = enable_historical
 
+    def calculate_vol_oi_score(self, volume: int, open_interest: int) -> float:
+        """Calculate Volume/Open Interest score based on Unusual Whales methodology"""
+        if open_interest == 0:
+            return 95.0  # Brand new contracts, very high score
+        
+        ratio = volume / open_interest
+        
+        # Scoring based on Unusual Whales examples
+        if ratio >= 10.0:  # Like NVDA example (11.55 ratio)
+            return 95.0
+        elif ratio >= 5.0:
+            return 85.0
+        elif ratio >= 2.0:
+            return 75.0
+        elif ratio >= 1.0:  # Volume > OI threshold
+            return 65.0
+        else:
+            return max(10.0, ratio * 50)  # Proportional score
+    
+    def calculate_large_block_score(self, volume: int, whale_threshold: int = 5000) -> float:
+        """Detect large institutional blocks based on Unusual Whales methodology"""
+        if volume >= 10000:  # Like MSFT examples
+            return 95.0
+        elif volume >= whale_threshold:
+            # Progressive scoring for large blocks
+            return min(95.0, 80.0 + (volume - whale_threshold) / 1000 * 3)
+        else:
+            return max(0, (volume / whale_threshold) * 50)
+    
     def calculate_whale_score(
         self,
         volume_1d: int,
@@ -24,55 +56,134 @@ class OptionsScreener:
         delta: float,
         iv: float,
     ) -> float:
-        """Score de probabilité de 'whale' basé sur plusieurs critères"""
-        score = 0
-
+        """Enhanced whale score using Unusual Whales methodology"""
+        # Calculate individual component scores
+        vol_oi_score = self.calculate_vol_oi_score(volume_1d, open_interest)
+        block_score = self.calculate_large_block_score(volume_1d)
+        
+        # Legacy scoring components (preserved for continuity)
+        legacy_score = 0
+        
         # Volume 1 jour score (0-25 points)
         if volume_1d > 5000:
-            score += 25
+            legacy_score += 25
         elif volume_1d > 2000:
-            score += 20
+            legacy_score += 20
         elif volume_1d > 1000:
-            score += 15
+            legacy_score += 15
         elif volume_1d > 500:
-            score += 10
-
-        # Volume 7 jours score (0-25 points)
-        if volume_7d > 20000:
-            score += 25
-        elif volume_7d > 10000:
-            score += 20
-        elif volume_7d > 5000:
-            score += 15
-
-        # Ratio Volume/OI score (0-25 points)
-        vol_oi_ratio = volume_1d / open_interest if open_interest > 0 else 0
-        if vol_oi_ratio > 5:
-            score += 25
-        elif vol_oi_ratio > 3:
-            score += 20
-        elif vol_oi_ratio > 2:
-            score += 15
-        elif vol_oi_ratio > 1:
-            score += 10
-
+            legacy_score += 10
+        
         # Delta score pour calls ITM/ATM (0-15 points)
         if delta > 0.4:
-            score += 15
+            legacy_score += 15
         elif delta > 0.3:
-            score += 10
+            legacy_score += 10
         elif delta > 0.2:
-            score += 5
-
+            legacy_score += 5
+        
         # Implied Volatility score (0-10 points)
         if iv > 0.8:
-            score += 10
+            legacy_score += 10
         elif iv > 0.5:
-            score += 7
+            legacy_score += 7
         elif iv > 0.3:
-            score += 5
-
-        return min(score, 100)  # Cap à 100
+            legacy_score += 5
+        
+        # Composite score with Unusual Whales weighting
+        composite_score = (
+            legacy_score * 0.4 +      # Legacy logic (40%)
+            vol_oi_score * 0.35 +     # Vol/OI ratio (35%) - very important per UW
+            block_score * 0.25        # Large blocks (25%) - institutional detection
+        )
+        
+        return min(100.0, composite_score)
+    
+    def calculate_whale_score_v3(
+        self,
+        volume_1d: int,
+        volume_7d: int, 
+        open_interest: int,
+        delta: float,
+        iv: float,
+        option_symbol: str
+    ) -> Tuple[float, Dict[str, any]]:
+        """Enhanced whale score v3 with historical anomaly detection"""
+        # Get base scores from v2
+        base_score = self.calculate_whale_score(
+            volume_1d, volume_7d, open_interest, delta, iv
+        )
+        
+        # Historical anomaly scores
+        volume_anomaly = 0.0
+        oi_anomaly = 0.0
+        historical_stats = {}
+        
+        if self.historical_manager:
+            try:
+                # Calculate volume anomaly vs historical average
+                volume_anomaly, vol_stats = self.historical_manager.calculate_volume_anomaly(
+                    current_volume=volume_1d,
+                    option_symbol=option_symbol,
+                    lookback_days=10
+                )
+                
+                # Calculate OI anomaly vs historical average  
+                oi_anomaly, oi_stats = self.historical_manager.calculate_oi_anomaly(
+                    current_oi=open_interest,
+                    option_symbol=option_symbol,
+                    lookback_days=10
+                )
+                
+                historical_stats = {
+                    "volume_stats": vol_stats,
+                    "oi_stats": oi_stats
+                }
+                
+            except Exception as e:
+                print(f"Historical analysis error for {option_symbol}: {e}")
+        
+        # Composite score v3 with historical weighting
+        if volume_anomaly > 0 or oi_anomaly > 0:
+            # Historical data available - use enhanced scoring
+            enhanced_score = (
+                base_score * 0.50 +         # Base UW logic (50%)
+                volume_anomaly * 0.35 +     # Volume vs history (35%)
+                oi_anomaly * 0.15           # OI vs history (15%)
+            )
+        else:
+            # No historical data - fallback to base score
+            enhanced_score = base_score
+        
+        scoring_details = {
+            "base_score": base_score,
+            "volume_anomaly": volume_anomaly,
+            "oi_anomaly": oi_anomaly,
+            "enhanced_score": enhanced_score,
+            "has_historical_data": (volume_anomaly > 0 or oi_anomaly > 0),
+            "historical_stats": historical_stats
+        }
+        
+        return min(100.0, enhanced_score), scoring_details
+    
+    def get_vol_oi_ratio(self, volume: int, open_interest: int) -> float:
+        """Calculate Volume/Open Interest ratio"""
+        return volume / open_interest if open_interest > 0 else float('inf')
+    
+    def categorize_block_size(self, volume: int) -> str:
+        """Categorize option volume into block sizes"""
+        if volume >= 10000:
+            return "🐋 Whale"
+        elif volume >= 5000:
+            return "🦑 Large"
+        elif volume >= 2000:
+            return "🐟 Medium"
+        else:
+            return "🦐 Small"
+    
+    def is_unusual_activity(self, vol_oi_ratio: float, volume: int) -> bool:
+        """Determine if activity is unusual based on UW criteria"""
+        return vol_oi_ratio >= 1.0 or volume >= 5000
 
     def _screen_options(
         self,
@@ -346,18 +457,51 @@ class OptionsScreener:
                 delta = 0.3
                 iv = 0.4
                 
-            # Calculate whale score
-            whale_score = self.calculate_whale_score(
-                volume_1d=volume_1d,
-                volume_7d=volume_7d,
-                open_interest=open_interest,
-                delta=abs(delta),
-                iv=iv
-            )
+            # Use enhanced whale score v3 with historical data
+            if self.enable_historical:
+                whale_score, scoring_details = self.calculate_whale_score_v3(
+                    volume_1d=volume_1d,
+                    volume_7d=volume_7d,
+                    open_interest=open_interest,
+                    delta=abs(delta),
+                    iv=iv,
+                    option_symbol=opt["symbol"]
+                )
+            else:
+                # Fallback to v2 scoring
+                whale_score = self.calculate_whale_score(
+                    volume_1d=volume_1d,
+                    volume_7d=volume_7d,
+                    open_interest=open_interest,
+                    delta=abs(delta),
+                    iv=iv
+                )
+                scoring_details = {"enhanced_score": whale_score, "has_historical_data": False}
+            
+            # Calculate additional metrics
+            vol_oi_ratio = self.get_vol_oi_ratio(volume_1d, open_interest)
+            
+            # Apply basic Unusual Whales filters (configurable via Config class)
+            # These can be configured via environment variables or config files
+            min_vol_oi = float(os.getenv('MIN_VOL_OI_RATIO', '0.0'))
+            min_whale_block = int(os.getenv('MIN_WHALE_BLOCK', '0'))
+            filter_new_only = os.getenv('FILTER_NEW_POSITIONS_ONLY', 'false').lower() == 'true'
+            
+            # Apply Vol/OI filter
+            if vol_oi_ratio < min_vol_oi:
+                return None
+            
+            # Apply whale block filter
+            if volume_1d < min_whale_block:
+                return None
+            
+            # Apply new positions filter
+            if filter_new_only and vol_oi_ratio < 1.0:
+                return None
             
             # Check threshold
             if whale_score >= min_whale_score:
-                return OptionScreenerResult(
+                result = OptionScreenerResult(
                     symbol=symbol,
                     option_symbol=opt["symbol"],
                     expiration=opt["expiration_date"],
@@ -377,6 +521,18 @@ class OptionsScreener:
                          datetime.now()).days
                     )
                 )
+                
+                # Set historical context if available
+                if self.enable_historical and scoring_details.get('has_historical_data', False):
+                    vol_stats = scoring_details.get('historical_stats', {}).get('volume_stats', {})
+                    oi_stats = scoring_details.get('historical_stats', {}).get('oi_stats', {})
+                    
+                    volume_ratio = vol_stats.get('volume_ratio')
+                    oi_ratio = oi_stats.get('oi_ratio')
+                    
+                    result.set_historical_context(volume_ratio, oi_ratio)
+                
+                return result
                 
         except Exception as e:
             print(f"Error processing option data: {e}")
@@ -442,4 +598,31 @@ class OptionsScreener:
                 print(f"Error processing batch: {e}")
                 continue
         
+        # Save results to historical database for future anomaly detection
+        if self.historical_manager and all_results:
+            try:
+                saved_count = self.historical_manager.save_scan_results(all_results)
+                print(f"💾 Saved {saved_count} results to historical database")
+            except Exception as e:
+                print(f"Error saving to historical database: {e}")
+        
         return sorted(all_results, key=lambda x: x.whale_score, reverse=True)
+    
+    def get_historical_stats(self) -> Dict[str, any]:
+        """Get historical database statistics"""
+        if not self.historical_manager:
+            return {"enabled": False}
+        
+        try:
+            stats = self.historical_manager.get_database_stats()
+            stats["enabled"] = True
+            return stats
+        except Exception as e:
+            return {"enabled": False, "error": str(e)}
+    
+    def cleanup_historical_data(self, days_to_keep: int = 30) -> int:
+        """Clean up old historical data"""
+        if not self.historical_manager:
+            return 0
+        
+        return self.historical_manager.cleanup_old_data(days_to_keep)

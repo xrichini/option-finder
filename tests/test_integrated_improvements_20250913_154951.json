@@ -1,0 +1,36 @@
+{
+  "tests_passed": 3,
+  "tests_failed": 0,
+  "test_details": [
+    {
+      "test": "Parseur de symboles",
+      "status": "PASSED",
+      "details": "Parsing correct des symboles OCC",
+      "timestamp": "2025-09-13T15:49:51.601994"
+    },
+    {
+      "test": "Client Tradier",
+      "status": "SKIPPED",
+      "reason": "TRADIER_API_TOKEN manquant",
+      "timestamp": "2025-09-13T15:49:51.602154"
+    },
+    {
+      "test": "Analyseur d'options",
+      "status": "PASSED",
+      "details": "Alerte générée (sévérité: 0.72)",
+      "timestamp": "2025-09-13T15:49:51.605058"
+    },
+    {
+      "test": "Moteur de recommandations",
+      "status": "PASSED",
+      "details": "Recommandation: BUY_CALL (confiance: 0.75)",
+      "timestamp": "2025-09-13T15:49:51.605535"
+    },
+    {
+      "test": "Moteur intégré",
+      "status": "SKIPPED",
+      "reason": "TRADIER_API_TOKEN manquant",
+      "timestamp": "2025-09-13T15:49:51.605630"
+    }
+  ]
+}

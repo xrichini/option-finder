@@ -2,13 +2,9 @@
 import requests
 import asyncio
 import aiohttp
-from typing import Dict, List, Set, Optional, Tuple
-from datetime import datetime, timedelta
+from typing import Dict, List
 from utils.config import Config
-from functools import lru_cache
-import streamlit as st
 import json
-import os
 from pathlib import Path
 import time
 from dataclasses import dataclass
@@ -26,8 +22,8 @@ class CacheEntry:
 
 class AsyncTradierClient:
     def __init__(self, max_concurrent: int = 10, rate_limit: float = 0.1):
-        self.api_key = Config.TRADIER_API_KEY or st.session_state.get('temp_api_key')
-        self.base_url = Config.TRADIER_BASE_URL
+        self.api_key = Config.get_tradier_api_key()
+        self.base_url = Config.get_tradier_base_url()
         self.headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Accept": "application/json",
