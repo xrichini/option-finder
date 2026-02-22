@@ -59,7 +59,7 @@ async def _fetch_fmp(days: int) -> dict:
     today = date.today()
     to_date = today + timedelta(days=days)
     url = (
-        f"https://financialmodelingprep.com/api/v3/earnings_calendar"
+        f"https://financialmodelingprep.com/stable/earnings-calendar"
         f"?from={today}&to={to_date}&apikey={api_key}"
     )
 

@@ -117,8 +117,24 @@
             background: #0f1117;
             border-bottom: 1px solid #1a1d2e;
         }
-        .badges-left { display:flex; gap:7px; align-items:center; }
+        .badges-left { display:flex; gap:7px; align-items:center; flex-wrap:wrap; }
         .badges-right { font-size:.76rem; color:#4a5568; }
+        .ticker-search {
+            background: #1a1d2e;
+            border: 1px solid #4a5568;
+            border-radius: 16px;
+            color: #e2e8f0;
+            font-size: .78rem;
+            padding: 3px 10px 3px 26px;
+            width: 90px;
+            outline: none;
+            transition: border-color .15s, width .2s;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23718096' stroke-width='2.5'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: 8px center;
+        }
+        .ticker-search:focus { border-color: #63b3ed; width: 120px; }
+        .ticker-search::placeholder { color: #4a5568; }
 
         /* ====== FILTER BUTTONS ====== */
         .filter-btn {
@@ -191,7 +207,7 @@
         .loc-marker { position:absolute; top:-2px; width:9px; height:9px; border-radius:50%; transform:translateX(-50%); }
         .loc-itm { background:#68d391; } .loc-otm { background:#fc8181; } .loc-atm { background:#63b3ed; }
         .chg-pos { color:#68d391; } .chg-neg { color:#fc8181; } .chg-neu { color:#a0aec0; }
-        .sector-tag { font-size:.72em; color:#4a5568; }
+        .sector-tag { font-size:.9em; color:#a0aec0; }
         .earnings-badge { color:#f6c90e; text-shadow: 0 0 6px rgba(246,201,14,.55); }
 
         /* ====== PROGRESS BAR ====== */
@@ -341,6 +357,8 @@
     <!-- ══════════════════ BADGES BAR ══════════════════ -->
     <div class="badges-bar">
         <div class="badges-left">
+            <input type="text" id="tickerSearch" class="ticker-search" placeholder="Ticker…" maxlength="6" autocomplete="off" spellcheck="false">
+            <span class="badges-sep"></span>
             <button class="filter-btn active" data-filter="all">All <span class="filter-badge" id="badge-all">0</span></button>
             <button class="filter-btn" data-filter="high-score">Score↑ <span class="filter-badge" id="badge-high-score">0</span></button>
             <button class="filter-btn" data-filter="high-volume">Vol↑ <span class="filter-badge" id="badge-high-volume">0</span></button>
@@ -394,6 +412,7 @@
         let currentOptions  = [];
         let filteredOptions = [];
         let isLoading = false;
+        let tickerSearch = '';          // live ticker text filter
         let _progressPoll = null;
 
         function _startProgressPolling() {
@@ -584,6 +603,8 @@
 
                 currentOptions  = opps;
                 filteredOptions = [...currentOptions];
+                if (tickerSearch) filteredOptions = filteredOptions.filter(
+                    o => (o.underlying_symbol || '').toUpperCase().startsWith(tickerSearch));
 
                 const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
                 document.getElementById('scanMeta').textContent =
@@ -685,6 +706,20 @@
                     applyFilter(this.dataset.filter);
                 });
             });
+
+            // Ticker search — re-run active badge filter on each keystroke
+            const tickerInput = document.getElementById('tickerSearch');
+            if (tickerInput) {
+                tickerInput.addEventListener('input', function() {
+                    tickerSearch = this.value.trim().toUpperCase();
+                    const active = document.querySelector('.filter-btn.active');
+                    applyFilter(active ? active.dataset.filter : 'all');
+                });
+                // ESC clears the field
+                tickerInput.addEventListener('keydown', function(e) {
+                    if (e.key === 'Escape') { this.value = ''; tickerSearch = ''; applyFilter('all'); }
+                });
+            }
         }
 
         // ============================================================
@@ -709,6 +744,8 @@
             { key: 'change_pct',  label: 'Chg%',       sortKey: 'change_pct' },
             { key: 'stock_volume','label': 'Stk Vol',  sortKey: 'stock_volume' },
             { key: 'sector',      label: 'Sector',     sortKey: 'sector' },
+            { key: '_beta',       label: 'Beta',       sortKey: 'beta',           title: 'Beta vs S&P500' },
+            { key: '_insider',    label: 'Insider',    sortKey: 'insider_signal', title: 'Activité insiders 30j' },
             { key: 'earnings_flag', label: '⚡',        sortKey: 'earnings_soon', title: 'Earnings dans 7j' },
             { key: '_score',      label: 'Score',      sortKey: 'whale_score' },
         ];
@@ -783,6 +820,24 @@
             const moneyness = opt.moneyness || '';
             const mPct      = Number(opt.moneyness_pct || 0);
 
+            // FMP Enrichment — Profile + Metrics + Insider
+            const beta          = opt.beta != null ? Number(opt.beta) : null;
+            const capLabel      = opt.cap_label || '';
+            const peRatio       = opt.pe_ratio  != null ? Number(opt.pe_ratio) : null;
+            const insiderIcon   = opt.insider_icon   || '⚪';
+            const insiderSignal = opt.insider_signal || 'neutral';
+            const insiderBuys   = opt.insider_buys   || 0;
+            const insiderSells  = opt.insider_sells  || 0;
+
+            const betaColor = beta == null ? '#4a5568'
+                : (beta >= 2 ? '#e53e3e' : (beta >= 1.3 ? '#f6ad55' : '#a0aec0'));
+            const betaHtml = beta != null
+                ? `<span style="color:${betaColor};font-weight:600" title="${capLabel}${peRatio ? ' · PE\u00a0' + peRatio : ''}">${beta.toFixed(2)}</span>`
+                : '<span style="color:#4a5568">--</span>';
+
+            const insiderTitle = `${insiderBuys}B\u00a0/\u00a0${insiderSells}S (30j)`;
+            const insiderHtml  = `<span title="${insiderTitle}" style="cursor:default;font-size:1.1em">${insiderIcon}</span>`;
+
             // Earnings
             const earningsSoon   = opt.earnings_soon || false;
             const earningsDate   = opt.earnings_date  || '';
@@ -836,7 +891,7 @@
             if (moneyness === 'OTM') locPos = Math.min(95, 50 + Math.abs(mPct) * 3);
             const locClass = moneyness === 'ITM' ? 'loc-itm' : (moneyness === 'ATM' ? 'loc-atm' : 'loc-otm');
             const locHtml = moneyness
-                ? `<span class="loc-bar"><span class="loc-track"><span class="loc-marker ${locClass}" style="left:${locPos}%"></span></span><span style="font-size:0.75em;color:#a0aec0">${moneyness}</span></span>`
+                ? `<span class="loc-bar"><span class="loc-track"><span class="loc-marker ${locClass}" style="left:${locPos}%"></span></span><span style="font-size:0.82em;color:#cbd5e0;margin-left:3px">${moneyness}</span></span>`
                 : '--';
 
             // exp formatting — backend may use 'expiration' or 'expiration_date'
@@ -862,6 +917,8 @@
                 <td>${chgStr}</td>
                 <td>${stkVol > 0 ? (stkVol/1e6).toFixed(1)+'M' : '--'}</td>
                 <td><span class="sector-tag">${sector}</span></td>
+                <td style="text-align:center">${betaHtml}</td>
+                <td style="text-align:center">${insiderHtml}</td>
                 <td style="text-align:center">${earningsHtml}</td>
                 <td>${scorePill}</td>
             </tr>`;
@@ -1370,6 +1427,10 @@
                     filteredOptions = [...currentOptions];
             }
             
+            // Ticker search overlay (stacks on top of any badge filter)
+            if (tickerSearch) filteredOptions = filteredOptions.filter(
+                o => (o.underlying_symbol || '').toUpperCase().startsWith(tickerSearch));
+
             console.log(`✅ Filtre ${filterType}: ${filteredOptions.length}/${currentOptions.length} options affichées`);
             
             // Debug: Montrer les options filtrées

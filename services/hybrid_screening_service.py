@@ -10,9 +10,11 @@ from typing import List, Dict, Any, Optional, Callable
 import logging
 from datetime import datetime
 
+import asyncio
 from services.screening_service import ScreeningService
 from services.hybrid_data_service import HybridDataService
 from api.earnings_endpoints import get_earnings_map
+from api.fmp_enrichment import get_profiles, get_key_metrics, get_insider_activity
 
 logger = logging.getLogger(__name__)
 
@@ -111,10 +113,23 @@ class HybridScreeningService(ScreeningService):
             )
             logger.info(f"✅ Prix récupérés pour {len(underlying_prices)} symboles")
 
-            # Earnings calendar (non-bloquant — dict vide si FMP indisponible)
-            earnings_map: dict = await get_earnings_map(days=7)
+            # Pre-fetch FMP data concurrently (non-bloquant — dict vide si indisponible)
+            (
+                earnings_map,
+                profile_map,
+                metrics_map,
+                insider_map,
+            ) = await asyncio.gather(
+                get_earnings_map(days=7),
+                get_profiles(underlying_symbols),
+                get_key_metrics(underlying_symbols),
+                get_insider_activity(underlying_symbols),
+            )
             logger.info(
-                f"📅 Earnings map: {len(earnings_map)} symboles dans les 7 prochains jours"
+                f"📅 Earnings: {len(earnings_map)} | "
+                f"📊 Profiles: {len(profile_map)} | "
+                f"📈 Metrics: {len(metrics_map)} | "
+                f"👤 Insider: {len(insider_map)}"
             )
 
             # Phase 3: Enrichissement hybride avec prix pré-chargés
@@ -202,7 +217,36 @@ class HybridScreeningService(ScreeningService):
                         "vol_oi_ratio": getattr(opp, "vol_oi_ratio", 0),
                         "change_pct": getattr(opp, "change_pct", 0),
                         "stock_volume": getattr(opp, "stock_volume", 0),
-                        "sector": getattr(opp, "sector", ""),
+                        "sector": (
+                            profile_map.get(opp.underlying_symbol.upper(), {}).get(
+                                "sector"
+                            )
+                            or getattr(opp, "sector", "")
+                        ),
+                        "industry": profile_map.get(
+                            opp.underlying_symbol.upper(), {}
+                        ).get("industry", ""),
+                        "beta": profile_map.get(opp.underlying_symbol.upper(), {}).get(
+                            "beta"
+                        ),
+                        "cap_label": profile_map.get(
+                            opp.underlying_symbol.upper(), {}
+                        ).get("cap_label", ""),
+                        "pe_ratio": metrics_map.get(
+                            opp.underlying_symbol.upper(), {}
+                        ).get("pe_ratio"),
+                        "insider_signal": insider_map.get(
+                            opp.underlying_symbol.upper(), {}
+                        ).get("signal", "neutral"),
+                        "insider_icon": insider_map.get(
+                            opp.underlying_symbol.upper(), {}
+                        ).get("icon", "⚪"),
+                        "insider_buys": insider_map.get(
+                            opp.underlying_symbol.upper(), {}
+                        ).get("buys", 0),
+                        "insider_sells": insider_map.get(
+                            opp.underlying_symbol.upper(), {}
+                        ).get("sells", 0),
                         "moneyness": getattr(opp, "moneyness", ""),
                         "moneyness_pct": getattr(opp, "moneyness_pct", 0),
                         # Earnings calendar
@@ -264,7 +308,36 @@ class HybridScreeningService(ScreeningService):
                         "vol_oi_ratio": getattr(opp, "vol_oi_ratio", 0),
                         "change_pct": getattr(opp, "change_pct", 0),
                         "stock_volume": getattr(opp, "stock_volume", 0),
-                        "sector": getattr(opp, "sector", ""),
+                        "sector": (
+                            profile_map.get(opp.underlying_symbol.upper(), {}).get(
+                                "sector"
+                            )
+                            or getattr(opp, "sector", "")
+                        ),
+                        "industry": profile_map.get(
+                            opp.underlying_symbol.upper(), {}
+                        ).get("industry", ""),
+                        "beta": profile_map.get(opp.underlying_symbol.upper(), {}).get(
+                            "beta"
+                        ),
+                        "cap_label": profile_map.get(
+                            opp.underlying_symbol.upper(), {}
+                        ).get("cap_label", ""),
+                        "pe_ratio": metrics_map.get(
+                            opp.underlying_symbol.upper(), {}
+                        ).get("pe_ratio"),
+                        "insider_signal": insider_map.get(
+                            opp.underlying_symbol.upper(), {}
+                        ).get("signal", "neutral"),
+                        "insider_icon": insider_map.get(
+                            opp.underlying_symbol.upper(), {}
+                        ).get("icon", "⚪"),
+                        "insider_buys": insider_map.get(
+                            opp.underlying_symbol.upper(), {}
+                        ).get("buys", 0),
+                        "insider_sells": insider_map.get(
+                            opp.underlying_symbol.upper(), {}
+                        ).get("sells", 0),
                         "moneyness": getattr(opp, "moneyness", ""),
                         "moneyness_pct": getattr(opp, "moneyness_pct", 0),
                         # Earnings calendar

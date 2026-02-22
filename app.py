@@ -35,6 +35,7 @@ from api.short_interest_endpoints import short_interest_router
 from api.filtering_endpoints import filtering_router
 from api.universe_endpoints import universe_router
 from api.earnings_endpoints import earnings_router
+from api.fmp_enrichment import fmp_enrichment_router
 
 # Persistence
 from services.persistence_service import persistence_service
@@ -82,6 +83,7 @@ app.include_router(short_interest_router)
 app.include_router(filtering_router)
 app.include_router(universe_router)
 app.include_router(earnings_router)
+app.include_router(fmp_enrichment_router)
 
 # Appliquer la sécurité (API Key middleware + rate limiting)
 setup_security(app)
