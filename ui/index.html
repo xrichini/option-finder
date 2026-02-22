@@ -257,9 +257,116 @@
             font-size: 0.9rem;
         }
 
+        /* ============================================================
+         * FLOW TABLE  (Ghost Prints style)
+         * ============================================================ */
+        .flow-table-wrapper {
+            overflow-x: auto;
+            margin-bottom: 30px;
+            border-radius: 10px;
+            border: 1px solid #2d3748;
+        }
+        .flow-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.82rem;
+            font-family: 'Courier New', monospace;
+        }
+        .flow-table thead {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            background: #1a202c;
+        }
+        .flow-table th {
+            padding: 8px 10px;
+            text-align: left;
+            color: #a0aec0;
+            font-size: 0.74rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            cursor: pointer;
+            user-select: none;
+            white-space: nowrap;
+            border-bottom: 2px solid #2d3748;
+        }
+        .flow-table th:hover { color: #fff; }
+        .flow-table th.sort-asc::after  { content: ' \25B2'; font-size: 0.7em; color: #63b3ed; }
+        .flow-table th.sort-desc::after { content: ' \25BC'; font-size: 0.7em; color: #63b3ed; }
+        .flow-table td {
+            padding: 6px 10px;
+            border-bottom: 1px solid rgba(255,255,255,0.04);
+            white-space: nowrap;
+        }
+        .flow-table tbody tr:hover { background: rgba(255,255,255,0.04); cursor: pointer; }
+        /* Call = green tint, Put = red tint */
+        .flow-table tbody tr.row-call { border-left: 3px solid #38a169; }
+        .flow-table tbody tr.row-put  { border-left: 3px solid #e53e3e; }
+        .flow-table tbody tr.row-call td:first-child { border-left: 3px solid #38a169; }
+        .flow-table tbody tr.row-put  td:first-child { border-left: 3px solid #e53e3e; }
+        .badge-call { background: rgba(56,161,105,.2); color: #68d391; padding: 2px 8px; border-radius: 4px; font-weight: 700; font-size:0.8em; }
+        .badge-put  { background: rgba(229,62,62,.2);  color: #fc8181; padding: 2px 8px; border-radius: 4px; font-weight: 700; font-size:0.8em; }
+        .score-pill {
+            display: inline-block;
+            min-width: 46px;
+            text-align: center;
+            padding: 2px 7px;
+            border-radius: 20px;
+            font-weight: 700;
+            font-size: 0.8em;
+        }
+        .score-high   { background: #276749; color: #9ae6b4; }
+        .score-med    { background: #744210; color: #fbd38d; }
+        .score-low    { background: #742a2a; color: #feb2b2; }
+        .sizzle-bar {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .sizzle-track {
+            width: 50px; height: 6px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+        .sizzle-fill {
+            height: 100%;
+            border-radius: 3px;
+            background: #f6ad55;
+        }
+        .loc-bar {
+            display: inline-flex;
+            align-items: center;
+            gap: 3px;
+            font-size: 0.75em;
+        }
+        .loc-track {
+            width: 60px; height: 5px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 2px;
+            position: relative;
+        }
+        .loc-marker {
+            position: absolute;
+            top: -2px;
+            width: 9px; height: 9px;
+            border-radius: 50%;
+            transform: translateX(-50%);
+        }
+        .loc-itm  { background: #68d391; }
+        .loc-otm  { background: #fc8181; }
+        .loc-atm  { background: #63b3ed; }
+        .chg-pos { color: #68d391; }
+        .chg-neg { color: #fc8181; }
+        .chg-neu { color: #a0aec0; }
+        .sector-tag {
+            font-size: 0.72em;
+            color: #718096;
+        }
+        /* keep old card styles for AI mode */
         .options-grid {
             display: grid;
-            grid-template-columns: repeat(5, 1fr);
+            grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
             gap: 15px;
             margin-bottom: 30px;
         }
@@ -921,8 +1028,15 @@
             <p>Scan en cours... Analyse des opportunités d'options</p>
         </div>
 
-            <div class="options-grid" id="optionsGrid">
-                <!-- Les cartes d'options seront générées ici par JavaScript -->
+            <!-- Flow table (normal mode) & AI grid (AI mode) -->
+            <div id="flowTableWrapper" class="flow-table-wrapper">
+                <table class="flow-table" id="flowTable">
+                    <thead id="flowTableHead"></thead>
+                    <tbody id="flowTableBody"></tbody>
+                </table>
+            </div>
+            <div class="options-grid" id="optionsGrid" style="display:none">
+                <!-- AI card grid - populate when AI mode active -->
             </div>
         </main>
     </div>
@@ -1314,27 +1428,164 @@
             }
         }
 
-        // Rendu des cartes d'options
+        // ============================================================
+        // FLOW TABLE - Ghost Prints style
+        // ============================================================
+        const FLOW_COLUMNS = [
+            { key: '_time',       label: 'Time',       sortKey: '_ts' },
+            { key: 'underlying_symbol', label: 'Sym',  sortKey: 'underlying_symbol' },
+            { key: 'option_type', label: 'Side',       sortKey: 'option_type' },
+            { key: 'strike',      label: 'Strike',     sortKey: 'strike' },
+            { key: 'expiration_date', label: 'Exp',    sortKey: 'expiration_date' },
+            { key: 'dte',         label: 'DTE',        sortKey: 'dte' },
+            { key: '_loc',        label: 'Location',   sortKey: 'moneyness_pct' },
+            { key: 'volume',      label: 'Vol (Day)',   sortKey: 'volume' },
+            { key: 'open_interest', label: 'OI',       sortKey: 'open_interest' },
+            { key: 'vol_oi_ratio',  label: 'Vol/OI',   sortKey: 'vol_oi_ratio' },
+            { key: 'delta',       label: 'Delta',      sortKey: 'delta' },
+            { key: '_sizzle',     label: 'Sizzle',     sortKey: 'sizzle_index' },
+            { key: 'implied_volatility', label: 'IV%', sortKey: 'implied_volatility' },
+            { key: 'change_pct',  label: 'Chg%',       sortKey: 'change_pct' },
+            { key: 'stock_volume','label': 'Stk Vol',  sortKey: 'stock_volume' },
+            { key: 'sector',      label: 'Sector',     sortKey: 'sector' },
+            { key: '_score',      label: 'Score',      sortKey: 'whale_score' },
+        ];
+
+        let tableSortKey = 'whale_score';
+        let tableSortAsc = false;
+
         function renderOptions() {
-            const grid = document.getElementById('optionsGrid');
-            
+            // Show table, hide AI grid
+            document.getElementById('flowTableWrapper').style.display = '';
+            document.getElementById('optionsGrid').style.display = 'none';
+
+            const head = document.getElementById('flowTableHead');
+            const body = document.getElementById('flowTableBody');
+
+            // Header
+            head.innerHTML = '<tr>' + FLOW_COLUMNS.map(col => {
+                let cls = '';
+                if (col.sortKey === tableSortKey) cls = tableSortAsc ? 'sort-asc' : 'sort-desc';
+                return `<th class="${cls}" data-sortkey="${col.sortKey}" onclick="tableSort('${col.sortKey}')">${col.label}</th>`;
+            }).join('') + '</tr>';
+
             if (filteredOptions.length === 0) {
-                grid.innerHTML = `
-                    <div style="grid-column: 1/-1; text-align: center; padding: 40px; color: #a0aec0;">
-                        <p>Aucune opportunité trouvée avec les critères actuels.</p>
-                        <p>Essayez de réduire les filtres ou d'attendre une mise à jour des données.</p>
-                    </div>
-                `;
+                body.innerHTML = `<tr><td colspan="${FLOW_COLUMNS.length}" style="text-align:center;padding:30px;color:#718096;">Aucune opportunité — ajustez les filtres ou lancez un nouveau scan.</td></tr>`;
                 return;
             }
 
-            grid.innerHTML = filteredOptions.map(option => createOptionCard(option)).join('');
+            // Sort
+            const sorted = [...filteredOptions].sort((a, b) => {
+                const va = sortVal(a, tableSortKey);
+                const vb = sortVal(b, tableSortKey);
+                if (va < vb) return tableSortAsc ? -1 : 1;
+                if (va > vb) return tableSortAsc ? 1 : -1;
+                return 0;
+            });
+
+            body.innerHTML = sorted.map(opt => createFlowRow(opt)).join('');
         }
-        
-        // Rendu spécial pour les résultats avec classification IA
+
+        function sortVal(opt, key) {
+            const v = opt[key];
+            return v === undefined || v === null ? 0 : v;
+        }
+
+        function tableSort(key) {
+            if (tableSortKey === key) tableSortAsc = !tableSortAsc;
+            else { tableSortKey = key; tableSortAsc = false; }
+            renderOptions();
+        }
+
+        function createFlowRow(opt) {
+            const type = (opt.option_type || '').toLowerCase();
+            const isCall = type === 'call';
+            const rowClass = isCall ? 'row-call' : 'row-put';
+
+            const sym     = opt.underlying_symbol || opt.underlying || opt.symbol || 'N/A';
+            const strike  = Number(opt.strike || 0);
+            const dte     = Number(opt.dte || 0);
+            const volume  = Number(opt.volume || 0);
+            const oi      = Number(opt.open_interest || 0);
+            const volOi   = Number(opt.vol_oi_ratio || (oi > 0 ? volume/oi : 0)).toFixed(2);
+            const delta   = Number(opt.delta || 0).toFixed(2);
+            const score   = Number(opt.whale_score || opt.hybrid_score || 0);
+
+            let iv = Number(opt.implied_volatility || 0);
+            if (iv > 0 && iv <= 1) iv *= 100;
+
+            const chgPct    = Number(opt.change_pct || 0);
+            const stkVol    = Number(opt.stock_volume || 0);
+            const sector    = opt.sector || '';
+            const sizzle    = Number(opt.sizzle_index || 0);
+            const moneyness = opt.moneyness || '';
+            const mPct      = Number(opt.moneyness_pct || 0);
+
+            // Timestamp
+            const ts = opt.timestamp ? new Date(opt.timestamp) : null;
+            const timeStr = ts ? ts.toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false}) : '--:--:--';
+
+            // side badge
+            const sideBadge = isCall
+                ? `<span class="badge-call">Call</span>`
+                : `<span class="badge-put">Put</span>`;
+
+            // score pill
+            let scoreCls = score >= 70 ? 'score-high' : (score >= 40 ? 'score-med' : 'score-low');
+            const scorePill = `<span class="score-pill ${scoreCls}">${score.toFixed(1)}</span>`;
+
+            // Chg%
+            let chgCls = chgPct > 0 ? 'chg-pos' : (chgPct < 0 ? 'chg-neg' : 'chg-neu');
+            const chgStr = chgPct !== 0 ? `<span class="${chgCls}">${chgPct > 0 ? '+' : ''}${chgPct.toFixed(2)}%</span>` : '<span class="chg-neu">--</span>';
+
+            // Sizzle bar
+            const sizzleCap = Math.min(sizzle, 10);
+            const sizzlePct = sizzle > 0 ? Math.round((sizzleCap / 10) * 100) : 0;
+            const sizzleColor = sizzle >= 5 ? '#e53e3e' : (sizzle >= 2 ? '#f6ad55' : '#68d391');
+            const sizzleHtml = sizzle > 0
+                ? `<span class="sizzle-bar"><span class="sizzle-track"><span class="sizzle-fill" style="width:${sizzlePct}%;background:${sizzleColor}"></span></span><span style="color:${sizzleColor};font-size:0.8em">${sizzle.toFixed(1)}x</span></span>`
+                : '<span style="color:#4a5568">--</span>';
+
+            // Location bar
+            let locPos = 50; // default ATM
+            if (moneyness === 'ITM') locPos = Math.max(5, 50 - Math.abs(mPct) * 3);
+            if (moneyness === 'OTM') locPos = Math.min(95, 50 + Math.abs(mPct) * 3);
+            const locClass = moneyness === 'ITM' ? 'loc-itm' : (moneyness === 'ATM' ? 'loc-atm' : 'loc-otm');
+            const locHtml = moneyness
+                ? `<span class="loc-bar"><span class="loc-track"><span class="loc-marker ${locClass}" style="left:${locPos}%"></span></span><span style="font-size:0.75em;color:#a0aec0">${moneyness}</span></span>`
+                : '--';
+
+            // exp formatting
+            const expStr = (opt.expiration_date || '').replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$2/$3');
+
+            const optSym = opt.option_symbol || '';
+            return `<tr class="${rowClass}" onclick="showOptionDetails('${optSym}')">
+                <td style="color:#718096;font-size:0.78em">${timeStr}</td>
+                <td><strong>${sym}</strong></td>
+                <td>${sideBadge}</td>
+                <td>$${strike}</td>
+                <td>${expStr}</td>
+                <td style="color:${dte <= 3 ? '#fc8181' : '#e2e8f0'}">${dte}d</td>
+                <td>${locHtml}</td>
+                <td>${volume.toLocaleString()}</td>
+                <td>${oi.toLocaleString()}</td>
+                <td>${volOi}x</td>
+                <td>${delta}</td>
+                <td>${sizzleHtml}</td>
+                <td>${iv > 0 ? iv.toFixed(1)+'%' : '--'}</td>
+                <td>${chgStr}</td>
+                <td>${stkVol > 0 ? (stkVol/1e6).toFixed(1)+'M' : '--'}</td>
+                <td><span class="sector-tag">${sector}</span></td>
+                <td>${scorePill}</td>
+            </tr>`;
+        }
+
+        // AI mode: keep card view (table hidden, grid visible)
         function renderOptionsWithAI() {
+            document.getElementById('flowTableWrapper').style.display = 'none';
             const grid = document.getElementById('optionsGrid');
-            
+            grid.style.display = 'grid';
+
             if (filteredOptions.length === 0) {
                 grid.innerHTML = `
                     <div style="grid-column: 1/-1; text-align: center; padding: 40px; color: #a0aec0;">
@@ -1345,13 +1596,7 @@
                 return;
             }
 
-            // Trier les opportunités par score IA décroissant
-            const sortedOptions = [...filteredOptions].sort((a, b) => {
-                const scoreA = a.ai_score || 0;
-                const scoreB = b.ai_score || 0;
-                return scoreB - scoreA;
-            });
-            
+            const sortedOptions = [...filteredOptions].sort((a, b) => (b.ai_score || 0) - (a.ai_score || 0));
             grid.innerHTML = sortedOptions.map(option => createOptionCardWithAI(option)).join('');
         }
 

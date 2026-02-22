@@ -157,9 +157,7 @@ class TestAdvancedFilteringService:
         """Test creating custom preset"""
         filters = AdvancedFilters(min_whale_score=80, max_price=1.0)
         preset = advanced_filtering_service.create_custom_preset(
-            "test_custom",
-            filters,
-            "Test custom preset"
+            "test_custom", filters, "Test custom preset"
         )
         assert preset.name == "test_custom"
         assert preset.filters.min_whale_score == 80
@@ -169,7 +167,7 @@ class TestAdvancedFilteringService:
         # First create one
         filters = AdvancedFilters(min_whale_score=80)
         advanced_filtering_service.create_custom_preset("deleteme", filters)
-        
+
         # Then delete it
         success = advanced_filtering_service.delete_preset("deleteme")
         assert success is True
@@ -190,11 +188,7 @@ class TestAdvancedFilteringService:
 
     def test_export_filters_json(self):
         """Test exporting filters as JSON"""
-        filters = AdvancedFilters(
-            min_whale_score=50,
-            max_price=5.0,
-            min_volume=100
-        )
+        filters = AdvancedFilters(min_whale_score=50, max_price=5.0, min_volume=100)
         json_str = advanced_filtering_service.export_filters_json(filters)
         assert isinstance(json_str, str)
         assert "min_whale_score" in json_str

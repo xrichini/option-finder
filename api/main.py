@@ -1,6 +1,10 @@
 """
 API FastAPI - Remplace l'interface Streamlit
 Interface web moderne avec WebSocket pour le screening d'options en temps réel
+
+DEPRECATED: Ce module est conservé pour compatibilité descendante.
+Le point d'entrée principal est app.py (racine du projet).
+Démarrer avec: uvicorn app:app --reload  ou  python start.py
 """
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
@@ -29,19 +33,21 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
-    title="Options Squeeze Finder", 
+    title="Options Squeeze Finder",
     description="Interface de screening d'options avec données temps réel",
-    version="2.0.0"
+    version="2.0.0",
 )
 
 # Inclusion des routers
 app.include_router(hybrid_router)
 app.include_router(short_interest_router)
 
+
 # Models Pydantic pour l'API
 class ScreeningRequest(BaseModel):
     symbols: List[str]
     screening_type: str = "classic"  # "classic" ou "ai"
+
 
 class ScreeningConfig(BaseModel):
     max_dte: int = 7
@@ -50,12 +56,14 @@ class ScreeningConfig(BaseModel):
     min_whale_score: float = 20.0
     ai_enabled: bool = False
 
+
 class ScreeningResponse(BaseModel):
     opportunities: List[OptionsOpportunity]
     total_count: int
     screening_type: str
     execution_time: float
     timestamp: str
+
 
 # État global de l'application
 class AppState:
@@ -65,8 +73,10 @@ class AppState:
         self.current_opportunities: List[OptionsOpportunity] = []
         self.screening_active: bool = False
         self.connected_websockets: List[WebSocket] = []
-        
+
+
 app_state = AppState()
+
 
 # WebSocket manager
 class WebSocketManager:
@@ -94,7 +104,9 @@ class WebSocketManager:
                     logger.warning(f"Erreur broadcast WebSocket: {e}")
                     self.active_connections.remove(connection)
 
+
 websocket_manager = WebSocketManager()
+
 
 # Progress callback pour WebSocket
 def create_progress_callback():
@@ -105,32 +117,35 @@ def create_progress_callback():
             "total": total,
             "message": message,
             "percentage": (current / total * 100) if total > 0 else 0,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
         }
         await websocket_manager.broadcast(progress_data)
-    
+
     return progress_callback
 
+
 # Routes API principales
+
 
 @app.get("/")
 async def get_dashboard():
     """Page principale du dashboard - Version moderne"""
     # Utilise le fichier ui/index.html avec la nouvelle interface
     ui_html_path = Path("ui/index.html")
-    
+
     if ui_html_path.exists():
-        with open(ui_html_path, 'r', encoding='utf-8') as f:
+        with open(ui_html_path, "r", encoding="utf-8") as f:
             return HTMLResponse(content=f.read())
     else:
         # Fallback sur l'ancien dashboard si le fichier ui/index.html n'existe pas
         static_html_path = Path("static/dashboard.html")
         if static_html_path.exists():
-            with open(static_html_path, 'r', encoding='utf-8') as f:
+            with open(static_html_path, "r", encoding="utf-8") as f:
                 return HTMLResponse(content=f.read())
         else:
             # Dashboard intégré minimal en dernier recours
             return HTMLResponse(content=get_embedded_dashboard_html())
+
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -150,37 +165,42 @@ async def websocket_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         websocket_manager.disconnect(websocket)
 
+
 @app.get("/api/config", response_model=ConfigResponse)
 async def get_config():
     """Récupère la configuration actuelle"""
     return app_state.config_service.get_current_config()
+
 
 @app.put("/api/config", response_model=ConfigResponse)
 async def update_config(config: ScreeningConfig):
     """Met à jour la configuration"""
     return app_state.config_service.update_config(config.dict())
 
+
 @app.post("/api/screening/start", response_model=ScreeningResponse)
 async def start_screening(request: ScreeningRequest):
     """Lance le screening d'options"""
     start_time = datetime.now()
-    
+
     try:
         # Validation des symboles
         if not request.symbols:
             raise HTTPException(status_code=400, detail="Liste de symboles vide")
-        
+
         # Notification de début
-        await websocket_manager.broadcast({
-            "type": "screening_started",
-            "symbols": request.symbols,
-            "screening_type": request.screening_type,
-            "timestamp": start_time.isoformat()
-        })
-        
+        await websocket_manager.broadcast(
+            {
+                "type": "screening_started",
+                "symbols": request.symbols,
+                "screening_type": request.screening_type,
+                "timestamp": start_time.isoformat(),
+            }
+        )
+
         # Progress callback
         progress_cb = create_progress_callback()
-        
+
         # Lancement du screening selon le type
         if request.screening_type == "ai":
             # TODO: Récupérer top_n depuis l'interface web
@@ -188,62 +208,71 @@ async def start_screening(request: ScreeningRequest):
             opportunities = await app_state.screening_service.screen_options_with_ai(
                 symbols=request.symbols,
                 progress_callback=progress_cb,
-                top_n=10  # Limite à 10 meilleures opportunités avec l'IA
+                top_n=10,  # Limite à 10 meilleures opportunités avec l'IA
             )
         else:
             opportunities = await app_state.screening_service.screen_options_classic(
-                symbols=request.symbols,
-                progress_callback=progress_cb
+                symbols=request.symbols, progress_callback=progress_cb
             )
-        
+
         # Calcul du temps d'exécution
         execution_time = (datetime.now() - start_time).total_seconds()
-        
+
         # Sauvegarde des résultats
         app_state.current_opportunities = opportunities
-        
+
         # Préparation de la réponse
         response = ScreeningResponse(
             opportunities=opportunities,
             total_count=len(opportunities),
             screening_type=request.screening_type,
             execution_time=execution_time,
-            timestamp=datetime.now().isoformat()
+            timestamp=datetime.now().isoformat(),
         )
-        
+
         # Notification de fin via WebSocket
-        await websocket_manager.broadcast({
-            "type": "screening_completed",
-            "data": {
-                "opportunities_count": len(opportunities),
-                "execution_time": execution_time,
-                "screening_type": request.screening_type,
-                "opportunities": [opp.dict() for opp in opportunities[:10]]  # Top 10 seulement
-            },
-            "timestamp": datetime.now().isoformat()
-        })
-        
-        logger.info(f"Screening {request.screening_type} terminé: {len(opportunities)} opportunités en {execution_time:.2f}s")
-        
+        await websocket_manager.broadcast(
+            {
+                "type": "screening_completed",
+                "data": {
+                    "opportunities_count": len(opportunities),
+                    "execution_time": execution_time,
+                    "screening_type": request.screening_type,
+                    "opportunities": [
+                        opp.dict() for opp in opportunities[:10]
+                    ],  # Top 10 seulement
+                },
+                "timestamp": datetime.now().isoformat(),
+            }
+        )
+
+        logger.info(
+            f"Screening {request.screening_type} terminé: {len(opportunities)} opportunités en {execution_time:.2f}s"
+        )
+
         return response
-        
+
     except Exception as e:
         error_msg = f"Erreur lors du screening: {str(e)}"
         logger.error(error_msg)
-        
+
         # Notification d'erreur
-        await websocket_manager.broadcast({
-            "type": "screening_error",
-            "error": error_msg,
-            "timestamp": datetime.now().isoformat()
-        })
-        
+        await websocket_manager.broadcast(
+            {
+                "type": "screening_error",
+                "error": error_msg,
+                "timestamp": datetime.now().isoformat(),
+            }
+        )
+
         raise HTTPException(status_code=500, detail=error_msg)
+
 
 @app.get("/api/opportunities", response_model=List[OptionsOpportunity])
 async def get_current_opportunities():
     """Récupère les opportunités actuelles"""
     return app_state.current_opportunities
+
 
 @app.get("/api/symbols/suggestions")
 async def get_symbol_suggestions():
@@ -254,6 +283,7 @@ async def get_symbol_suggestions():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.post("/api/symbols/validate")
 async def validate_symbols(symbols: List[str]):
     """Valide une liste de symboles"""
@@ -262,6 +292,7 @@ async def validate_symbols(symbols: List[str]):
         return {"validation_results": validation_results}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/api/status")
 async def get_status():
@@ -273,8 +304,9 @@ async def get_status():
         "websocket_connections": len(websocket_manager.active_connections),
         "environment": config.environment.value,
         "api_base_url": config.base_url,
-        "ai_capabilities": config.ai_capabilities
+        "ai_capabilities": config.ai_capabilities,
     }
+
 
 @app.post("/api/recommendations")
 async def get_trade_recommendations() -> List[Dict[str, Any]]:
@@ -282,17 +314,20 @@ async def get_trade_recommendations() -> List[Dict[str, Any]]:
     Génère des recommandations de trades IA
     """
     try:
-        recommendations = await app_state.screening_service.get_ai_trade_recommendations()
-        
+        recommendations = (
+            await app_state.screening_service.get_ai_trade_recommendations()
+        )
+
         logger.info(f"Généré {len(recommendations)} recommandations de trades")
         return recommendations
-        
+
     except Exception as e:
         logger.error(f"Erreur génération recommandations: {e}")
         raise HTTPException(
-            status_code=500, 
-            detail=f"Erreur lors de la génération des recommandations: {str(e)}"
+            status_code=500,
+            detail=f"Erreur lors de la génération des recommandations: {str(e)}",
         )
+
 
 @app.get("/api/database/stats")
 async def get_database_stats():
@@ -301,23 +336,22 @@ async def get_database_stats():
     """
     try:
         stats = app_state.screening_service.unusual_whales_service.get_database_stats()
-        
+
         return {
             "historical_database": stats,
-            "status": "active" if "error" not in stats else "error"
+            "status": "active" if "error" not in stats else "error",
         }
-        
+
     except Exception as e:
         logger.error(f"Erreur récupération stats DB: {e}")
-        return {
-            "historical_database": {"error": str(e)},
-            "status": "error"
-        }
+        return {"historical_database": {"error": str(e)}, "status": "error"}
+
 
 # Gestion des fichiers statiques
 # Mount the ui directory to serve CSS, JS, etc
 app.mount("/ui", StaticFiles(directory="ui"), name="ui")
 app.mount("/static", StaticFiles(directory="ui/static"), name="static")
+
 
 def get_embedded_dashboard_html() -> str:
     """Dashboard HTML moderne avec paramètres configurables"""
@@ -1029,10 +1063,11 @@ def get_embedded_dashboard_html() -> str:
 </html>
     """
 
+
 if __name__ == "__main__":
     import uvicorn
-    
+
     print("🚀 Démarrage du serveur Options Squeeze Finder...")
     print("📊 Interface disponible sur: http://localhost:8000")
-    
+
     uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)

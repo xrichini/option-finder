@@ -283,6 +283,16 @@ class OptionsOpportunity(BaseModel):
     rho: Optional[float] = None
     implied_volatility: Optional[float] = None
 
+    # --- Champs enrichis (inline avec Ghost Prints) ---
+    vol_oi_ratio: float = 0.0  # Vol / Open Interest
+    change_pct: float = 0.0  # % de changement du prix option
+    stock_volume: int = 0  # Volume du sous-jacent (actions)
+    underlying_price: float = 0.0  # Prix du sous-jacent
+    sector: str = ""  # Secteur (Technology, ETF, ...)
+    sizzle_index: float = 0.0  # Vol actuel / moyenne 30j (Unusual Whales)
+    moneyness: str = ""  # ITM / OTM / ATM
+    moneyness_pct: float = 0.0  # % distance strike/sous-jacent
+
 
 class ErrorResponse(BaseModel):
     """Réponse d'erreur standardisée"""

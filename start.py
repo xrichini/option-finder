@@ -82,11 +82,14 @@ def main():
         # Valider la clé Polygon en faisant un appel de test
         try:
             from data.polygon_client import PolygonClient
+
             test_client = PolygonClient(polygon_key)
             if test_client.validate_key():
                 print("OK Polygon.io: Configuré et valide")
             else:
-                print("WARNING Polygon.io: Clé invalide (données historiques désactivées)")
+                print(
+                    "WARNING Polygon.io: Clé invalide (données historiques désactivées)"
+                )
         except Exception as e:
             print(f"WARNING Polygon.io: Erreur de validation ({str(e)[:50]}...)")
     else:
@@ -126,9 +129,9 @@ def main():
     print("=" * 60)
 
     try:
-        # Lancement d'uvicorn avec l'app FastAPI
+        # Lancement d'uvicorn avec l'app FastAPI (point d'entrée unique: app.py)
         uvicorn.run(
-            "api.main:app",  # Module:variable depuis api/main.py
+            "app:app",  # Module:variable depuis app.py (source unique de vérité)
             host=host,
             port=port,
             reload=True,  # Auto-reload en développement

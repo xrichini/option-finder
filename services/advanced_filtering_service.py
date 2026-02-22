@@ -141,7 +141,9 @@ class AdvancedFilteringService:
             filtered = [opp for opp in filtered if opp.get("dte", 0) >= filters.min_dte]
 
         if filters.max_dte is not None:
-            filtered = [opp for opp in filtered if opp.get("dte", 999) <= filters.max_dte]
+            filtered = [
+                opp for opp in filtered if opp.get("dte", 999) <= filters.max_dte
+            ]
 
         # IV filters
         if filters.min_iv is not None:
@@ -161,14 +163,14 @@ class AdvancedFilteringService:
         # Volume filters
         if filters.min_volume is not None:
             filtered = [
-                opp
-                for opp in filtered
-                if opp.get("volume_1d", 0) >= filters.min_volume
+                opp for opp in filtered if opp.get("volume_1d", 0) >= filters.min_volume
             ]
 
         if filters.max_volume is not None:
             filtered = [
-                opp for opp in filtered if opp.get("volume_1d", 999999) <= filters.max_volume
+                opp
+                for opp in filtered
+                if opp.get("volume_1d", 999999) <= filters.max_volume
             ]
 
         # Open Interest filters
@@ -213,9 +215,7 @@ class AdvancedFilteringService:
         # Price filters
         if filters.min_price is not None:
             filtered = [
-                opp
-                for opp in filtered
-                if opp.get("last_price", 0) >= filters.min_price
+                opp for opp in filtered if opp.get("last_price", 0) >= filters.min_price
             ]
 
         if filters.max_price is not None:
@@ -230,10 +230,14 @@ class AdvancedFilteringService:
         )
         return filtered
 
-    def apply_preset(self, opportunities: List[Dict[str, Any]], preset_name: str) -> List[Dict[str, Any]]:
+    def apply_preset(
+        self, opportunities: List[Dict[str, Any]], preset_name: str
+    ) -> List[Dict[str, Any]]:
         """Apply a named preset to opportunities"""
         if preset_name not in self.presets:
-            logger.warning(f"Preset '{preset_name}' not found, returning all opportunities")
+            logger.warning(
+                f"Preset '{preset_name}' not found, returning all opportunities"
+            )
             return opportunities
 
         preset = self.presets[preset_name]
@@ -332,10 +336,15 @@ class AdvancedFilteringService:
 
         return {
             "total": len(opportunities),
-            "avg_whale_score": sum(whale_scores) / len(whale_scores) if whale_scores else 0,
+            "avg_whale_score": (
+                sum(whale_scores) / len(whale_scores) if whale_scores else 0
+            ),
             "price_range": [min(prices) if prices else 0, max(prices) if prices else 0],
             "dte_range": [min(dtes) if dtes else 0, max(dtes) if dtes else 0],
-            "volume_range": [min(volumes) if volumes else 0, max(volumes) if volumes else 0],
+            "volume_range": [
+                min(volumes) if volumes else 0,
+                max(volumes) if volumes else 0,
+            ],
         }
 
 

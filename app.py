@@ -29,6 +29,12 @@ from api.hybrid_endpoints import hybrid_router
 from api.short_interest_endpoints import short_interest_router
 from api.filtering_endpoints import filtering_router
 
+# Persistence
+from services.persistence_service import persistence_service
+
+# Sécurité (API Key + Rate Limiting)
+from services.security_service import setup_security
+
 # Chargement des variables d'environnement
 from dotenv import load_dotenv
 
@@ -59,6 +65,7 @@ app.add_middleware(
 # Servir les fichiers statiques (CSS, JS, images)
 try:
     app.mount("/static", StaticFiles(directory="ui/static"), name="static")
+    app.mount("/ui", StaticFiles(directory="ui"), name="ui")
 except Exception as e:
     logger.warning(f"Could not mount static files: {e}")
 
@@ -70,6 +77,9 @@ config_service = ConfigService()
 app.include_router(hybrid_router)
 app.include_router(short_interest_router)
 app.include_router(filtering_router)
+
+# Appliquer la sécurité (API Key middleware + rate limiting)
+setup_security(app)
 
 
 # Gestionnaire de connections WebSocket
@@ -298,6 +308,22 @@ async def websocket_endpoint(websocket: WebSocket):
 
 async def run_screening_task(session_id: str, request: ScreeningRequest):
     """Exécute un screening en arrière-plan avec WebSocket updates"""
+    start_time = datetime.now()
+
+    # Créer la session en base
+    try:
+        persistence_service.create_session(
+            session_id=session_id,
+            symbols=request.symbols,
+            option_type=request.option_type,
+            max_dte=request.max_dte,
+            min_volume=request.min_volume,
+            min_oi=request.min_oi,
+            min_whale_score=request.min_whale_score,
+            enable_ai=request.enable_ai,
+        )
+    except Exception as e:
+        logger.warning(f"Impossible de créer la session DB: {e}")
 
     try:
         await manager.broadcast(
@@ -354,6 +380,14 @@ async def run_screening_task(session_id: str, request: ScreeningRequest):
         result_count = len(results)
         logger.info(f"Screening {session_id} terminé: {result_count} résultats")
 
+        # Sauvegarder les résultats en base
+        try:
+            duration = (datetime.now() - start_time).total_seconds()
+            persistence_service.save_results(session_id, results)
+            persistence_service.complete_session(session_id, result_count, duration)
+        except Exception as e:
+            logger.warning(f"Impossible de sauvegarder les résultats DB: {e}")
+
     except Exception as e:
         logger.exception(f"Erreur screening {session_id}")
         error_data = {
@@ -362,15 +396,127 @@ async def run_screening_task(session_id: str, request: ScreeningRequest):
             "error": str(e),
         }
         await manager.broadcast(error_data)
+        try:
+            duration = (datetime.now() - start_time).total_seconds()
+            persistence_service.complete_session(session_id, 0, duration, error=str(e))
+        except Exception:
+            pass
 
 
 # ==============================================================================
-# FICHIERS STATIQUES
+# ENDPOINTS SUPPLÉMENTAIRES
 # ==============================================================================
 
-# Servir les fichiers statiques (CSS, JS, images)
-app.mount("/static", StaticFiles(directory="ui/static"), name="static")
-app.mount("/ui", StaticFiles(directory="ui"), name="ui")
+
+@app.get("/api/status")
+async def get_status():
+    """Statut de l'application"""
+    config = config_service.get_current_config()
+    return {
+        "active": (
+            screening_service.is_running
+            if hasattr(screening_service, "is_running")
+            else False
+        ),
+        "opportunities_count": len(
+            getattr(screening_service, "current_opportunities", [])
+        ),
+        "websocket_connections": len(manager.active_connections),
+        "environment": config.environment.value,
+        "api_base_url": config.base_url,
+        "ai_capabilities": config.ai_capabilities,
+    }
+
+
+@app.get("/api/opportunities")
+async def get_current_opportunities():
+    """Récupère les opportunités du dernier screening"""
+    opps = getattr(screening_service, "current_opportunities", [])
+    return {
+        "opportunities": [o.dict() if hasattr(o, "dict") else o for o in opps],
+        "count": len(opps),
+    }
+
+
+@app.get("/api/symbols/suggestions")
+async def get_symbol_suggestions():
+    """Suggestions de symboles populaires"""
+    try:
+        symbols = await screening_service.get_symbol_suggestions()
+        return {"symbols": symbols}
+    except Exception as e:
+        return {
+            "symbols": ["AAPL", "TSLA", "NVDA", "SPY", "QQQ", "MSFT", "AMZN", "META"],
+            "note": str(e),
+        }
+
+
+@app.post("/api/symbols/validate")
+async def validate_symbols(payload: dict):
+    """Valide une liste de symboles"""
+    symbols = payload.get("symbols", [])
+    try:
+        results = await screening_service.validate_symbols(symbols)
+        return {"validation_results": results}
+    except Exception as e:
+        return {"validation_results": {s: True for s in symbols}, "note": str(e)}
+
+
+@app.post("/api/recommendations")
+async def get_trade_recommendations():
+    """Génère des recommandations de trades IA"""
+    try:
+        recommendations = await screening_service.get_ai_trade_recommendations()
+        return recommendations
+    except Exception as e:
+        logger.error(f"Erreur recommandations: {e}")
+        return []
+
+
+@app.get("/api/database/stats")
+async def get_database_stats():
+    """Statistiques de la base historique Unusual Whales"""
+    try:
+        stats = screening_service.unusual_whales_service.get_database_stats()
+        return {
+            "historical_database": stats,
+            "status": "active" if "error" not in stats else "error",
+        }
+    except Exception as e:
+        return {"historical_database": {"error": str(e)}, "status": "error"}
+
+
+# ==============================================================================
+# ENDPOINTS BASE DE DONNÉES PERSISTANTE
+# ==============================================================================
+
+
+@app.get("/api/db/sessions")
+async def list_db_sessions(limit: int = 50):
+    """Liste les dernières sessions de screening sauvegardées"""
+    return {"sessions": persistence_service.get_sessions(limit=limit)}
+
+
+@app.get("/api/db/sessions/{session_id}/results")
+async def get_db_session_results(session_id: str):
+    """Résultats persistés d'une session"""
+    results = persistence_service.get_session_results(session_id)
+    return {"session_id": session_id, "results": results, "count": len(results)}
+
+
+@app.get("/api/db/top")
+async def get_top_stored_opportunities(min_score: float = 60.0, limit: int = 100):
+    """Meilleures opportunités stockées toutes sessions confondues"""
+    return {
+        "opportunities": persistence_service.get_top_opportunities(min_score, limit)
+    }
+
+
+@app.get("/api/db/stats")
+async def get_db_stats():
+    """Statistiques de la base de données SQLite"""
+    return persistence_service.get_stats()
+
 
 # ==============================================================================
 # POINT D'ENTRÉE
