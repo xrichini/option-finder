@@ -230,17 +230,20 @@ async def _do_scan_async(symbols, max_dte, min_volume, min_oi, min_whale_score):
     propre event-loop afin de ne PAS bloquer l'event-loop principal FastAPI.
     Met à jour _scan_progress au fil du scan et stocke le résultat dans _scan_result.
     """
+
     async def _progress(current: int, total: int, symbol: str, details: str):
         pct = int(current / total * 100) if total else 0
-        _scan_progress.update({
-            "active": True,
-            "current": current,
-            "total": total,
-            "symbol": symbol,
-            "phase": details,
-            "percent": pct,
-            "complete": False,
-        })
+        _scan_progress.update(
+            {
+                "active": True,
+                "current": current,
+                "total": total,
+                "symbol": symbol,
+                "phase": details,
+                "percent": pct,
+                "complete": False,
+            }
+        )
         if total > 0 and current % 10 == 0 and current > 0:
             logger.info(f"\u23f3 Scan: {current}/{total} ({pct}%)")
 
@@ -257,27 +260,35 @@ async def _do_scan_async(symbols, max_dte, min_volume, min_oi, min_whale_score):
         )
     except Exception as exc:
         logger.error(f"❌ Scan background échoué: {exc}")
-        _scan_progress.update({"active": False, "complete": True, "phase": "error", "percent": 0})
+        _scan_progress.update(
+            {"active": False, "complete": True, "phase": "error", "percent": 0}
+        )
         _scan_result.update({"ready": False, "data": None, "error": str(exc)})
         return
 
     # ── Build response ──────────────────────────────────────────────────────
     call_opportunities = [o for o in opportunities if o.get("option_type") == "CALL"]
-    put_opportunities  = [o for o in opportunities if o.get("option_type") == "PUT"]
+    put_opportunities = [o for o in opportunities if o.get("option_type") == "PUT"]
 
     def _type_stats(ops):
         if not ops:
-            return {"count": 0, "avg_hybrid_score": 0, "avg_volume": 0, "avg_oi": 0, "best_opportunity": None}
+            return {
+                "count": 0,
+                "avg_hybrid_score": 0,
+                "avg_volume": 0,
+                "avg_oi": 0,
+                "best_opportunity": None,
+            }
         return {
             "count": len(ops),
             "avg_hybrid_score": sum(o.get("hybrid_score", 0) for o in ops) / len(ops),
-            "avg_volume":       sum(o.get("volume", 0) for o in ops) / len(ops),
-            "avg_oi":           sum(o.get("open_interest", 0) for o in ops) / len(ops),
+            "avg_volume": sum(o.get("volume", 0) for o in ops) / len(ops),
+            "avg_oi": sum(o.get("open_interest", 0) for o in ops) / len(ops),
             "best_opportunity": max(ops, key=lambda x: x.get("hybrid_score", 0)),
         }
 
     call_stats = _type_stats(call_opportunities)
-    put_stats  = _type_stats(put_opportunities)
+    put_stats = _type_stats(put_opportunities)
 
     response = {
         "opportunities": opportunities,
@@ -304,11 +315,13 @@ async def _do_scan_async(symbols, max_dte, min_volume, min_oi, min_whale_score):
                 "puts": put_stats,
                 "call_put_ratio": (
                     len(call_opportunities) / len(put_opportunities)
-                    if len(put_opportunities) > 0 else None
+                    if len(put_opportunities) > 0
+                    else None
                 ),
                 "best_overall": (
                     max(opportunities, key=lambda x: x.get("hybrid_score", 0))
-                    if opportunities else None
+                    if opportunities
+                    else None
                 ),
             },
             "by_symbol": {},
@@ -322,15 +335,23 @@ async def _do_scan_async(symbols, max_dte, min_volume, min_oi, min_whale_score):
     }
 
     for symbol in symbols:
-        sym_ops   = [o for o in opportunities if o.get("underlying_symbol") == symbol]
+        sym_ops = [o for o in opportunities if o.get("underlying_symbol") == symbol]
         sym_calls = [o for o in sym_ops if o.get("option_type") == "CALL"]
-        sym_puts  = [o for o in sym_ops if o.get("option_type") == "PUT"]
+        sym_puts = [o for o in sym_ops if o.get("option_type") == "PUT"]
         response["detailed_results"]["by_symbol"][symbol] = {
             "total": len(sym_ops),
             "calls": len(sym_calls),
-            "puts":  len(sym_puts),
-            "best_call": (max(sym_calls, key=lambda x: x.get("hybrid_score", 0)) if sym_calls else None),
-            "best_put":  (max(sym_puts,  key=lambda x: x.get("hybrid_score", 0)) if sym_puts  else None),
+            "puts": len(sym_puts),
+            "best_call": (
+                max(sym_calls, key=lambda x: x.get("hybrid_score", 0))
+                if sym_calls
+                else None
+            ),
+            "best_put": (
+                max(sym_puts, key=lambda x: x.get("hybrid_score", 0))
+                if sym_puts
+                else None
+            ),
         }
 
     logger.info(
@@ -342,15 +363,17 @@ async def _do_scan_async(symbols, max_dte, min_volume, min_oi, min_whale_score):
 
     # ── Store result + mark complete ─────────────────────────────────────────
     _scan_result.update({"ready": True, "data": response, "error": None})
-    _scan_progress.update({
-        "active": False,
-        "current": len(symbols),
-        "total": len(symbols),
-        "symbol": "",
-        "phase": "done",
-        "percent": 100,
-        "complete": True,
-    })
+    _scan_progress.update(
+        {
+            "active": False,
+            "current": len(symbols),
+            "total": len(symbols),
+            "symbol": "",
+            "phase": "done",
+            "percent": 100,
+            "complete": True,
+        }
+    )
 
 
 def _run_scan_thread(symbols, max_dte, min_volume, min_oi, min_whale_score):
@@ -371,7 +394,9 @@ def _run_scan_thread(symbols, max_dte, min_volume, min_oi, min_whale_score):
 
 
 @hybrid_router.post("/scan-all")
-async def scan_all_options(background_tasks: BackgroundTasks, request: ScanAllRequest = None):
+async def scan_all_options(
+    background_tasks: BackgroundTasks, request: ScanAllRequest = None
+):
     """
     Lance un scan complet Call+Put en tâche de fond et retourne immédiatement.
     L'UI doit:
@@ -381,25 +406,29 @@ async def scan_all_options(background_tasks: BackgroundTasks, request: ScanAllRe
     if request is None:
         request = ScanAllRequest()
 
-    symbols       = request.symbols or ["AAPL", "TSLA", "NVDA", "SPY", "MSFT"]
-    max_dte       = request.max_dte
-    min_volume    = request.min_volume
-    min_oi        = request.min_oi
+    symbols = request.symbols or ["AAPL", "TSLA", "NVDA", "SPY", "MSFT"]
+    max_dte = request.max_dte
+    min_volume = request.min_volume
+    min_oi = request.min_oi
     min_whale_score = request.min_whale_score
 
-    logger.info(f"🔍 Scan COMPLET Call+Put demandé: {len(symbols)} symboles — lancement background")
+    logger.info(
+        f"🔍 Scan COMPLET Call+Put demandé: {len(symbols)} symboles — lancement background"
+    )
 
     # Réinitialiser l'état avant de lancer
     _scan_result.update({"ready": False, "data": None, "error": None})
-    _scan_progress.update({
-        "active": True,
-        "current": 0,
-        "total": len(symbols),
-        "symbol": "",
-        "phase": "init",
-        "percent": 0,
-        "complete": False,
-    })
+    _scan_progress.update(
+        {
+            "active": True,
+            "current": 0,
+            "total": len(symbols),
+            "symbol": "",
+            "phase": "init",
+            "percent": 0,
+            "complete": False,
+        }
+    )
 
     # Lancer le scan dans un thread séparé (ne bloque pas l'event-loop)
     background_tasks.add_task(

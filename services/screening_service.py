@@ -65,10 +65,12 @@ class ScreeningService:
         total = len(symbols)
 
         for batch_start in range(0, total, BATCH_SIZE):
-            batch = symbols[batch_start:batch_start + BATCH_SIZE]
+            batch = symbols[batch_start : batch_start + BATCH_SIZE]
 
             tasks = [
-                asyncio.to_thread(self._analyze_symbol_sync, sym, params, underlying_quotes)
+                asyncio.to_thread(
+                    self._analyze_symbol_sync, sym, params, underlying_quotes
+                )
                 for sym in batch
             ]
             batch_results = await asyncio.gather(*tasks, return_exceptions=True)

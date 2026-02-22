@@ -192,6 +192,7 @@
         .loc-itm { background:#68d391; } .loc-otm { background:#fc8181; } .loc-atm { background:#63b3ed; }
         .chg-pos { color:#68d391; } .chg-neg { color:#fc8181; } .chg-neu { color:#a0aec0; }
         .sector-tag { font-size:.72em; color:#4a5568; }
+        .earnings-badge { color:#f6c90e; text-shadow: 0 0 6px rgba(246,201,14,.55); }
 
         /* ====== PROGRESS BAR ====== */
         .loading { text-align:center; padding:24px 40px; color:#a0aec0; }
@@ -282,6 +283,7 @@
             <select id="tbUniverse" class="tb-select" onchange="updateUniverseUI()">
                 <option value="sp500">S&amp;P 500</option>
                 <option value="nasdaq100">Nasdaq 100</option>
+                <option value="dow30">DOW 30</option>
                 <option value="short_interest">Short Interest</option>
                 <option value="manual">Custom</option>
             </select>
@@ -453,6 +455,7 @@
         const UNIVERSE_DEFAULTS = {
             sp500:          { minVol: 500,  minOi: 100, score: 30, iv: 0  },
             nasdaq100:      { minVol: 500,  minOi: 100, score: 30, iv: 0  },
+            dow30:          { minVol: 200,  minOi: 50,  score: 25, iv: 0  },
             short_interest: { minVol: 100,  minOi: 25,  score: 30, iv: 0  },
             manual:         { minVol: 50,   minOi: 1,   score: 30, iv: 0  },
         };
@@ -511,8 +514,9 @@
                     const raw = document.getElementById('fpCustomTickers').value;
                     symbols = raw.split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
                     if (!symbols.length) { showError('No tickers entered.'); return; }
-                } else if (universe === 'sp500' || universe === 'nasdaq100') {
-                    setStatus('scanning', 'Fetching ' + (universe === 'sp500' ? 'S&P 500' : 'Nasdaq 100') + ' tickers…');
+                } else if (['sp500', 'nasdaq100', 'dow30'].includes(universe)) {
+                    const label = { sp500: 'S&P 500', nasdaq100: 'Nasdaq 100', dow30: 'DOW 30' }[universe];
+                    setStatus('scanning', 'Fetching ' + label + ' tickers…');
                     const r = await fetch(API_BASE + '/api/universe/' + universe);
                     if (!r.ok) throw new Error('Universe fetch failed: ' + r.status);
                     const d = await r.json();
@@ -705,6 +709,7 @@
             { key: 'change_pct',  label: 'Chg%',       sortKey: 'change_pct' },
             { key: 'stock_volume','label': 'Stk Vol',  sortKey: 'stock_volume' },
             { key: 'sector',      label: 'Sector',     sortKey: 'sector' },
+            { key: 'earnings_flag', label: '⚡',        sortKey: 'earnings_soon', title: 'Earnings dans 7j' },
             { key: '_score',      label: 'Score',      sortKey: 'whale_score' },
         ];
 
@@ -723,7 +728,7 @@
             head.innerHTML = '<tr>' + FLOW_COLUMNS.map(col => {
                 let cls = '';
                 if (col.sortKey === tableSortKey) cls = tableSortAsc ? 'sort-asc' : 'sort-desc';
-                return `<th class="${cls}" data-sortkey="${col.sortKey}" onclick="tableSort('${col.sortKey}')">${col.label}</th>`;
+                return `<th class="${cls}" data-sortkey="${col.sortKey}" onclick="tableSort('${col.sortKey}')" title="${col.title || ''}">${col.label}</th>`;
             }).join('') + '</tr>';
 
             if (filteredOptions.length === 0) {
@@ -777,6 +782,14 @@
             const sizzle    = Number(opt.sizzle_index || 0);
             const moneyness = opt.moneyness || '';
             const mPct      = Number(opt.moneyness_pct || 0);
+
+            // Earnings
+            const earningsSoon   = opt.earnings_soon || false;
+            const earningsDate   = opt.earnings_date  || '';
+            const earningsTiming = opt.earnings_timing || '--';
+            const earningsHtml   = earningsSoon
+                ? `<span title="${earningsDate}\u00a0${earningsTiming}" style="cursor:default;font-size:1.1em" class="earnings-badge">⚡</span>`
+                : '<span style="color:#4a5568">--</span>';
 
             // Timestamp
             const ts = opt.timestamp ? new Date(opt.timestamp) : null;
@@ -849,6 +862,7 @@
                 <td>${chgStr}</td>
                 <td>${stkVol > 0 ? (stkVol/1e6).toFixed(1)+'M' : '--'}</td>
                 <td><span class="sector-tag">${sector}</span></td>
+                <td style="text-align:center">${earningsHtml}</td>
                 <td>${scorePill}</td>
             </tr>`;
         }

@@ -34,6 +34,7 @@ from api.hybrid_endpoints import hybrid_router
 from api.short_interest_endpoints import short_interest_router
 from api.filtering_endpoints import filtering_router
 from api.universe_endpoints import universe_router
+from api.earnings_endpoints import earnings_router
 
 # Persistence
 from services.persistence_service import persistence_service
@@ -80,6 +81,7 @@ app.include_router(hybrid_router)
 app.include_router(short_interest_router)
 app.include_router(filtering_router)
 app.include_router(universe_router)
+app.include_router(earnings_router)
 
 # Appliquer la sécurité (API Key middleware + rate limiting)
 setup_security(app)
@@ -545,5 +547,6 @@ if __name__ == "__main__":
         host="0.0.0.0",
         port=8000,
         reload=True,  # Rechargement auto en développement
+        reload_delay=2.0,  # Debounce 2s pour éviter les rechargements en cascade
         log_level="info",
     )
