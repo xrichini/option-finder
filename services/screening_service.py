@@ -11,6 +11,7 @@ from models.api_models import OptionsChainSnapshot, OptionsOpportunity
 from data.enhanced_tradier_client import EnhancedTradierClient
 from services.config_service import ConfigService
 from services.unusual_whales_service import UnusualWhalesService
+from services.history_service import history_service
 from utils.config import Config
 from utils.market_utils import get_sector, compute_sizzle_index, compute_moneyness
 
@@ -106,15 +107,26 @@ class ScreeningService:
 
         logger.info(f"Screening terminé: {len(opportunities)} opportunités trouvées")
 
-        # Sauvegarde automatique dans l'historique pour l'analyse des tendances
+        # --- Feed historique + enrichissement comparatif ---
         try:
             saved_count = self.unusual_whales_service.save_scan_results(opportunities)
             if saved_count > 0:
-                logger.info(
-                    f"💾 Sauvegardé {saved_count} opportunités dans l'historique"
-                )
+                logger.info(f"💾 UnusualWhales: {saved_count} opportunités sauvegardées")
         except Exception as e:
-            logger.warning(f"Erreur sauvegarde historique: {e}")
+            logger.warning(f"Erreur sauvegarde unusual_whales: {e}")
+
+        # Feed options_history.db (UPSERT un scan par jour)
+        try:
+            hist_count = history_service.record_scan_results(opportunities)
+            logger.info(f"📅 Historique: {hist_count} lignes dans options_history.db")
+        except Exception as e:
+            logger.warning(f"Erreur feed history: {e}")
+
+        # Enrichissement comparatif (IV Rank, IV Pct, OI Spike, Vol Trend)
+        try:
+            history_service.enrich_with_history(opportunities)
+        except Exception as e:
+            logger.warning(f"Erreur enrich_with_history: {e}")
 
         return opportunities
 

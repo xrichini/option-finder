@@ -1444,7 +1444,9 @@
             { key: 'vol_oi_ratio',  label: 'Vol/OI',   sortKey: 'vol_oi_ratio' },
             { key: 'delta',       label: 'Delta',      sortKey: 'delta' },
             { key: '_sizzle',     label: 'Sizzle',     sortKey: 'sizzle_index' },
+            { key: '_vol_trend',  label: 'V5d',        sortKey: 'vol_trend_ratio' },
             { key: 'implied_volatility', label: 'IV%', sortKey: 'implied_volatility' },
+            { key: 'iv_rank',     label: 'IVR',        sortKey: 'iv_rank' },
             { key: 'change_pct',  label: 'Chg%',       sortKey: 'change_pct' },
             { key: 'stock_volume','label': 'Stk Vol',  sortKey: 'stock_volume' },
             { key: 'sector',      label: 'Sector',     sortKey: 'sector' },
@@ -1546,6 +1548,20 @@
                 ? `<span class="sizzle-bar"><span class="sizzle-track"><span class="sizzle-fill" style="width:${sizzlePct}%;background:${sizzleColor}"></span></span><span style="color:${sizzleColor};font-size:0.8em">${sizzle.toFixed(1)}x</span></span>`
                 : '<span style="color:#4a5568">--</span>';
 
+            // Vol Trend 5d
+            const volTrend = Number(opt.vol_trend_ratio || 0);
+            const vtColor = volTrend >= 3 ? '#e53e3e' : (volTrend >= 1.5 ? '#f6ad55' : '#a0aec0');
+            const vtHtml = volTrend > 0
+                ? `<span style="color:${vtColor};font-weight:600">${volTrend.toFixed(1)}x</span>`
+                : '<span style="color:#4a5568">--</span>';
+
+            // IV Rank
+            const ivRank = Number(opt.iv_rank || 0);
+            const ivrColor = ivRank >= 80 ? '#e53e3e' : (ivRank >= 50 ? '#f6ad55' : '#a0aec0');
+            const ivrHtml = ivRank > 0
+                ? `<span style="color:${ivrColor};font-weight:600">${ivRank.toFixed(0)}%</span>`
+                : '<span style="color:#4a5568">--</span>';
+
             // Location bar
             let locPos = 50; // default ATM
             if (moneyness === 'ITM') locPos = Math.max(5, 50 - Math.abs(mPct) * 3);
@@ -1572,7 +1588,9 @@
                 <td>${volOi}x</td>
                 <td>${delta}</td>
                 <td>${sizzleHtml}</td>
+                <td>${vtHtml}</td>
                 <td>${iv > 0 ? iv.toFixed(1)+'%' : '--'}</td>
+                <td>${ivrHtml}</td>
                 <td>${chgStr}</td>
                 <td>${stkVol > 0 ? (stkVol/1e6).toFixed(1)+'M' : '--'}</td>
                 <td><span class="sector-tag">${sector}</span></td>
