@@ -4,6 +4,7 @@ Extrait la logique de screening de dashboard.py pour la rendre testable et réut
 """
 
 from typing import List, Dict, Any, Optional, Callable
+import asyncio
 import logging
 from datetime import datetime
 
@@ -59,46 +60,33 @@ class ScreeningService:
         except Exception as e:
             logger.warning(f"Impossible de récupérer les quotes sous-jacents: {e}")
 
-        for i, symbol in enumerate(symbols):
-            logger.info(f"\u23f3 [{i+1}/{len(symbols)}] {symbol}")
-            if progress_callback:
-                await progress_callback(i + 1, len(symbols), f"Analyse {symbol}...")
+        # --- Analyse parallèle par lots de 10 (asyncio.to_thread pour les appels bloquants) ---
+        BATCH_SIZE = 10
+        total = len(symbols)
 
-            try:
-                # Récupération des chaînes d'options avec EnhancedTradierClient
-                options_contracts = self.tradier_client.get_options_chains(symbol)
+        for batch_start in range(0, total, BATCH_SIZE):
+            batch = symbols[batch_start:batch_start + BATCH_SIZE]
 
-                if not options_contracts:
-                    logger.debug(f"Pas de chaînes d'options pour {symbol}")
-                    continue
+            tasks = [
+                asyncio.to_thread(self._analyze_symbol_sync, sym, params, underlying_quotes)
+                for sym in batch
+            ]
+            batch_results = await asyncio.gather(*tasks, return_exceptions=True)
 
-                # Conversion en format compatible et filtrage par expiration
-                filtered_chains = self._filter_contracts_by_dte(
-                    options_contracts, params["max_dte"]
-                )
+            for j, (sym, result) in enumerate(zip(batch, batch_results)):
+                global_idx = batch_start + j + 1
+                logger.info(f"\u23f3 [{global_idx}/{total}] {sym}")
+                if progress_callback:
+                    await progress_callback(global_idx, total, f"Analyse {sym}...")
 
-                if not filtered_chains:
-                    logger.debug(
-                        f"Pas d'expiration valide pour {symbol} (max_dte={params['max_dte']})"
-                    )
-                    continue
+                if isinstance(result, Exception):
+                    logger.error(f"Erreur lors de l'analyse de {sym}: {result}")
+                elif result:
+                    opportunities.extend(result)
 
-                # Analyse des opportunités sur les chaînes filtrées
-                symbol_opportunities = self._analyze_options_chains(
-                    symbol,
-                    filtered_chains,
-                    params,
-                    underlying_quote=underlying_quotes.get(symbol.upper(), {}),
-                )
-
-                opportunities.extend(symbol_opportunities)
-                logger.debug(
-                    f"{symbol}: {len(symbol_opportunities)} opportunités trouvées"
-                )
-
-            except Exception as e:
-                logger.error(f"Erreur lors de l'analyse de {symbol}: {e}")
-                continue
+            # Pause entre les lots pour ne pas saturer Tradier (10 appels en rafale)
+            if batch_start + BATCH_SIZE < total:
+                await asyncio.sleep(0.5)
 
         if progress_callback:
             await progress_callback(len(symbols), len(symbols), "Screening terminé")
@@ -272,6 +260,44 @@ class ScreeningService:
                 result[symbol] = []
 
         return result
+
+    def _analyze_symbol_sync(
+        self,
+        symbol: str,
+        params: Dict[str, Any],
+        underlying_quotes: Dict[str, Any],
+    ) -> List:
+        """
+        Analyse synchrone d'un symbole (destinée à être appelée via asyncio.to_thread).
+        Retourne une liste d'OptionsOpportunity ou [] si rien trouvé.
+        """
+        try:
+            options_contracts = self.tradier_client.get_options_chains(symbol)
+            if not options_contracts:
+                logger.debug(f"Pas de chaînes d'options pour {symbol}")
+                return []
+
+            filtered_chains = self._filter_contracts_by_dte(
+                options_contracts, params["max_dte"]
+            )
+            if not filtered_chains:
+                logger.debug(
+                    f"Pas d'expiration valide pour {symbol} (max_dte={params['max_dte']})"
+                )
+                return []
+
+            symbol_opps = self._analyze_options_chains(
+                symbol,
+                filtered_chains,
+                params,
+                underlying_quote=underlying_quotes.get(symbol.upper(), {}),
+            )
+            logger.debug(f"{symbol}: {len(symbol_opps)} opportunités trouvées")
+            return symbol_opps
+
+        except Exception as e:
+            logger.error(f"Erreur lors de l'analyse de {symbol}: {e}")
+            return []
 
     def _filter_contracts_by_dte(
         self, contracts: List, max_dte: int

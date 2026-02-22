@@ -7,6 +7,7 @@ Basé sur les bonnes idées du options_screening_starter.py
 
 import os
 import time
+import datetime as _dt
 import requests
 from typing import Dict, List, Any, Optional
 import logging
@@ -207,7 +208,40 @@ class EnhancedTradierClient:
         
         environment = "sandbox" if self.sandbox else "production"
         logger.info(f"Enhanced Tradier client initialisé (environnement: {environment})")
-    
+
+    # ------------------------------------------------------------------
+    # Cache adaptatif
+    # ------------------------------------------------------------------
+
+    def _market_open(self) -> bool:
+        """True si la session NYSE régulière est active (9h30-16h ET, lun-ven)."""
+        try:
+            from zoneinfo import ZoneInfo
+            now = _dt.datetime.now(ZoneInfo("America/New_York"))
+        except ImportError:
+            # Python < 3.9 : approximation UTC-5
+            now = _dt.datetime.utcnow() - _dt.timedelta(hours=5)
+        if now.weekday() >= 5:          # samedi=5, dimanche=6
+            return False
+        return _dt.time(9, 30) <= now.time() <= _dt.time(16, 0)
+
+    def _smart_ttl(self, data_type: str) -> int:
+        """
+        TTL adaptatif selon le type de données et l'état du marché.
+
+        - expirations : données hebdomadaires  →  24 h
+        - chains      : 5 min en séance, 1 h hors marché
+        - quotes      : 1 min en séance, 10 min hors marché
+        """
+        open_ = self._market_open()
+        if data_type == "expirations":
+            return 86_400          # les dates ne changent qu'en fin de semaine
+        if data_type == "chains":
+            return 300 if open_ else 3_600
+        if data_type == "quotes":
+            return 60  if open_ else 600
+        return 300
+
     def get_options_chains(self, symbol: str, expiration: Optional[str] = None,
                           strikes: Optional[List[float]] = None) -> List[OptionsContract]:
         """
@@ -233,9 +267,9 @@ class EnhancedTradierClient:
             logger.info(f"Auto-sélection expiration {expiration} pour {symbol}")
         
         cache_key = f"chains_{symbol}_{expiration}_{strikes}"
-        
-        # Vérification cache
-        if self._is_cached_valid(cache_key):
+
+        # Vérification cache avec TTL adaptatif
+        if self._is_cached_valid(cache_key, ttl=self._smart_ttl("chains")):
             return self.cache[cache_key]['data']
         
         url = f"{self.base_url}/markets/options/chains"
@@ -303,8 +337,8 @@ class EnhancedTradierClient:
     def _get_options_quotes_chunk(self, symbols: List[str]) -> Dict[str, OptionsContract]:
         """Récupère les cotations pour un chunk de symboles"""
         cache_key = f"quotes_{'_'.join(sorted(symbols))}"
-        
-        if self._is_cached_valid(cache_key):
+
+        if self._is_cached_valid(cache_key, ttl=self._smart_ttl("quotes")):
             return self.cache[cache_key]['data']
         
         url = f"{self.base_url}/markets/options/quotes"
@@ -340,8 +374,8 @@ class EnhancedTradierClient:
             Liste des dates d'expiration (YYYY-MM-DD)
         """
         cache_key = f"expirations_{symbol}"
-        
-        if self._is_cached_valid(cache_key):
+
+        if self._is_cached_valid(cache_key, ttl=self._smart_ttl("expirations")):
             return self.cache[cache_key]['data']
         
         url = f"{self.base_url}/markets/options/expirations"
