@@ -4,6 +4,11 @@ FastAPI Options Screening Application
 Architecture moderne remplaçant Streamlit
 """
 
+# ⚠️ Charger les variables d'environnement EN PREMIER avant tout import métier
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, BackgroundTasks
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, FileResponse
@@ -36,11 +41,6 @@ from services.history_service import history_service
 
 # Sécurité (API Key + Rate Limiting)
 from services.security_service import setup_security
-
-# Chargement des variables d'environnement
-from dotenv import load_dotenv
-
-load_dotenv()
 
 # Configuration du logging
 logging.basicConfig(level=logging.INFO)

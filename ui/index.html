@@ -86,7 +86,7 @@
             background: #141621;
             border-bottom: 1px solid #2d3748;
             overflow: hidden;
-            max-height: 100px;
+            max-height: 200px;
             transition: max-height .25s ease, padding .25s ease;
             padding: 9px 14px;
         }
@@ -135,6 +135,9 @@
             background: #4299e1; color: #fff; border-color: #4299e1;
         }
         .filter-btn:disabled { opacity:.4; cursor:not-allowed; }
+        .filter-btn-call.active, .filter-btn-call:hover:not(:disabled) { background:rgba(56,161,105,.35); border-color:#38a169; color:#68d391; }
+        .filter-btn-put.active,  .filter-btn-put:hover:not(:disabled)  { background:rgba(229,62,62,.3);  border-color:#e53e3e; color:#fc8181; }
+        .badges-sep { width:1px; background:#2d3748; margin:0 4px; align-self:stretch; display:inline-block; }
         .filter-badge {
             display:inline-block; margin-left:4px;
             background:rgba(255,255,255,.18); color:#fff;
@@ -190,13 +193,26 @@
         .chg-pos { color:#68d391; } .chg-neg { color:#fc8181; } .chg-neu { color:#a0aec0; }
         .sector-tag { font-size:.72em; color:#4a5568; }
 
-        /* ====== LOADING ====== */
-        .loading { text-align:center; padding:40px; color:#a0aec0; }
-        .loading-spinner {
-            border:3px solid #4a5568; border-top:3px solid #4299e1;
-            border-radius:50%; width:38px; height:38px;
-            animation:spin 1s linear infinite; margin:0 auto 16px;
+        /* ====== PROGRESS BAR ====== */
+        .loading { text-align:center; padding:24px 40px; color:#a0aec0; }
+        .progress-container { max-width:620px; margin:0 auto; }
+        .progress-bar-track {
+            width:100%; height:7px; background:#2d3748; border-radius:4px;
+            overflow:hidden; margin-bottom:8px;
         }
+        .progress-bar-fill {
+            height:100%;
+            background:linear-gradient(90deg,#3182ce,#63b3ed);
+            border-radius:4px; width:0%;
+            transition:width 0.25s ease;
+        }
+        .progress-label {
+            display:flex; justify-content:space-between;
+            font-size:.88em; color:#a0aec0; margin-bottom:5px;
+            font-family: -apple-system, monospace;
+            letter-spacing:.02em;
+        }
+        .progress-symbol { display:none; }
         @keyframes spin { to { transform:rotate(360deg); } }
 
         /* ====== AI CARD MODE (kept for compatibility) ====== */
@@ -267,7 +283,7 @@
                 <option value="sp500">S&amp;P 500</option>
                 <option value="nasdaq100">Nasdaq 100</option>
                 <option value="short_interest">Short Interest</option>
-                <option value="manual">Manual</option>
+                <option value="manual">Custom</option>
             </select>
             <select id="tbSide" class="tb-select">
                 <option value="both">ALL</option>
@@ -282,8 +298,8 @@
                 <option value="45">DTE ≤ 45</option>
             </select>
             <button id="btnScan" class="tb-btn tb-btn-scan" onclick="scanOptions()">&#9654; SCAN</button>
-            <button id="btnFilters" class="tb-btn tb-btn-filter" onclick="toggleFilterPanel()">&#9881; Filters</button>
-            <button class="tb-btn tb-btn-refresh" onclick="scanOptions()" title="Refresh">&#8635;</button>
+            <button id="btnFilters" class="tb-btn tb-btn-filter" onclick="toggleFilterPanel()" title="Option chain filters — applied during scan">&#9881; Option filters</button>
+            <button class="tb-btn tb-btn-refresh" onclick="applyClientFilters()" title="Re-apply filters on current results">&#8635;</button>
         </div>
         <div class="tb-status">
             <span id="statusDot" class="status-dot"></span>
@@ -295,10 +311,10 @@
     <div id="filterPanel" class="filter-panel collapsed">
         <div class="fp-row">
             <label>Min Vol
-                <input id="fpMinVol" type="number" value="50" min="0" style="width:65px">
+                <input id="fpMinVol" type="number" value="500" min="0" style="width:65px">
             </label>
             <label>Min OI
-                <input id="fpMinOi" type="number" value="1" min="0" style="width:55px">
+                <input id="fpMinOi" type="number" value="100" min="0" style="width:55px">
             </label>
             <label>Score ≥
                 <input id="fpScore" type="number" value="30" min="0" max="100" style="width:55px">
@@ -315,6 +331,9 @@
                 <textarea id="fpCustomTickers" rows="1" placeholder="AAPL, TSLA, NVDA, SPY, MSFT">AAPL, TSLA, NVDA, SPY, MSFT</textarea>
             </label>
         </div>
+        <div class="fp-row" style="justify-content:flex-end; margin-top:4px">
+            <button onclick="applyClientFilters()" style="padding:4px 14px;font-size:12px;border-radius:4px;border:1px solid #555;background:#2a2a2a;color:#e0e0e0;cursor:pointer;" title="Filter current results without re-scanning">Apply filters</button>
+        </div>
     </div>
 
     <!-- ══════════════════ BADGES BAR ══════════════════ -->
@@ -324,14 +343,27 @@
             <button class="filter-btn" data-filter="high-score">Score↑ <span class="filter-badge" id="badge-high-score">0</span></button>
             <button class="filter-btn" data-filter="high-volume">Vol↑ <span class="filter-badge" id="badge-high-volume">0</span></button>
             <button class="filter-btn" data-filter="near-expiry">≤7d <span class="filter-badge" id="badge-near-expiry">0</span></button>
+            <span class="badges-sep"></span>
+            <button class="filter-btn filter-btn-call" data-filter="calls">CALL <span class="filter-badge" id="badge-calls">0</span></button>
+            <button class="filter-btn filter-btn-put"  data-filter="puts">PUT <span class="filter-badge" id="badge-puts">0</span></button>
+            <button class="filter-btn" data-filter="unusual-vol">Vol/OI≥5x <span class="filter-badge" id="badge-unusual-vol">0</span></button>
+            <button class="filter-btn" data-filter="high-iv">IV≥60% <span class="filter-badge" id="badge-high-iv">0</span></button>
         </div>
         <div class="badges-right" id="scanMeta"></div>
     </div>
 
     <!-- ══════════════════ MAIN CONTENT AREA ══════════════════ -->
     <div id="loadingIndicator" class="loading" style="display:none">
-        <div class="loading-spinner"></div>
-        <p>Scan in progress…</p>
+        <div class="progress-container">
+            <div class="progress-label">
+                <span id="progressText">Starting…</span>
+                <span id="progressPct">0%</span>
+            </div>
+            <div class="progress-bar-track">
+                <div class="progress-bar-fill" id="progressBarFill"></div>
+            </div>
+            <div id="progressSymbol" class="progress-symbol"></div>
+        </div>
     </div>
 
     <div id="flowTableWrapper" class="flow-table-wrapper">
@@ -360,6 +392,40 @@
         let currentOptions  = [];
         let filteredOptions = [];
         let isLoading = false;
+        let _progressPoll = null;
+
+        function _startProgressPolling() {
+            if (_progressPoll) clearInterval(_progressPoll);
+            // Reset bar
+            document.getElementById('progressBarFill').style.width = '0%';
+            document.getElementById('progressText').textContent = 'Starting…';
+            document.getElementById('progressPct').textContent = '0%';
+            document.getElementById('progressSymbol').textContent = '';
+            _progressPoll = setInterval(async () => {
+                try {
+                    const r = await fetch(API_BASE + '/api/hybrid/scan-progress');
+                    const p = await r.json();
+                    if (p.total > 0) {
+                        document.getElementById('progressBarFill').style.width = p.percent + '%';
+                        const sym = p.symbol && !['INIT','PREP','idle','N/A',''].includes(p.symbol)
+                            ? p.symbol : '...';
+                        document.getElementById('progressText').textContent =
+                            p.current + ' / ' + p.total + '  \u25b6  ' + sym;
+                        document.getElementById('progressPct').textContent = p.percent + '%';
+                        document.getElementById('progressSymbol').textContent = '';
+                        setStatus('scanning', sym + '  ' + p.current + '/' + p.total);
+                    }
+                } catch(e) {}
+            }, 300);
+        }
+
+        function _stopProgressPolling() {
+            if (_progressPoll) { clearInterval(_progressPoll); _progressPoll = null; }
+            document.getElementById('progressBarFill').style.width = '0%';
+            document.getElementById('progressText').textContent = 'Starting…';
+            document.getElementById('progressPct').textContent = '0%';
+            document.getElementById('progressSymbol').textContent = '';
+        }
 
         // ──── Init ────
         document.addEventListener('DOMContentLoaded', () => {
@@ -383,12 +449,26 @@
             } catch (e) { console.warn('loadConfig:', e); }
         }
 
+        // Default filter values per universe
+        const UNIVERSE_DEFAULTS = {
+            sp500:          { minVol: 500,  minOi: 100, score: 30, iv: 0  },
+            nasdaq100:      { minVol: 500,  minOi: 100, score: 30, iv: 0  },
+            short_interest: { minVol: 100,  minOi: 25,  score: 30, iv: 0  },
+            manual:         { minVol: 50,   minOi: 1,   score: 30, iv: 0  },
+        };
+
         function updateUniverseUI() {
             const u = document.getElementById('tbUniverse').value;
             const customRow = document.getElementById('fpCustomRow');
             const siRow     = document.getElementById('fpSiRow');
             if (customRow) customRow.style.display = (u === 'manual') ? '' : 'none';
             if (siRow)     siRow.style.display     = (u === 'short_interest') ? '' : 'none';
+
+            // Update filter defaults for the selected universe
+            const d = UNIVERSE_DEFAULTS[u] || UNIVERSE_DEFAULTS.manual;
+            document.getElementById('fpMinVol').value = d.minVol;
+            document.getElementById('fpMinOi').value  = d.minOi;
+
             // auto-open filter panel when manual selected
             if (u === 'manual') {
                 const fp = document.getElementById('filterPanel');
@@ -412,6 +492,7 @@
                 document.getElementById('btnScan').disabled = true;
                 clearResults();
                 showLoading(true);
+                _startProgressPolling();
                 setStatus('scanning', 'Scanning…');
 
                 const universe = document.getElementById('tbUniverse').value;
@@ -455,7 +536,7 @@
 
                 setStatus('scanning', 'Scanning ' + symbols.length + ' tickers…');
 
-                // ── 2. Call scan ──
+                // ── 2. Start background scan (returns immediately) ──
                 const body = {
                     symbols:         symbols,
                     min_volume:      minVol,
@@ -464,17 +545,35 @@
                     max_dte:         maxDte,
                     min_whale_score: minScore,
                 };
-                const r = await fetch(API_BASE + '/api/hybrid/scan-all', {
+                const startResp = await fetch(API_BASE + '/api/hybrid/scan-all', {
                     method:  'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body:    JSON.stringify(body)
                 });
-                if (!r.ok) throw new Error('Scan HTTP ' + r.status);
-                const data = await r.json();
+                if (!startResp.ok) throw new Error('Scan start HTTP ' + startResp.status);
+
+                // ── 3. Poll until scan complete ──
+                while (true) {
+                    await new Promise(res => setTimeout(res, 400));
+                    try {
+                        const p = await fetch(API_BASE + '/api/hybrid/scan-progress').then(r => r.json());
+                        if (p.complete || (!p.active && p.phase !== 'init')) break;
+                    } catch(_) {}
+                }
+
+                // ── 4. Fetch result ──
+                const resultResp = await fetch(API_BASE + '/api/hybrid/scan-result');
+                if (!resultResp.ok) throw new Error('Result fetch HTTP ' + resultResp.status);
+                const scanResult = await resultResp.json();
+
+                if (!scanResult.ready) {
+                    throw new Error(scanResult.error || 'Scan échoué (aucun résultat)');
+                }
+                const data = scanResult.data;
 
                 let opps = data.opportunities || [];
 
-                // ── 3. Client-side side filter ──
+                // ── 5. Client-side side filter ──
                 if (side !== 'both') {
                     opps = opps.filter(o => (o.option_type || '').toLowerCase() === side);
                 }
@@ -498,8 +597,41 @@
             } finally {
                 isLoading = false;
                 document.getElementById('btnScan').disabled = false;
+                _stopProgressPolling();
                 showLoading(false);
             }
+        }
+
+        // ──── CLIENT-SIDE FILTER (no new scan) ────
+        function applyClientFilters() {
+            if (!currentOptions.length) return;   // nothing to filter yet
+
+            const minVol   = parseInt(document.getElementById('fpMinVol').value)  || 0;
+            const minOi    = parseInt(document.getElementById('fpMinOi').value)   || 0;
+            const minScore = parseFloat(document.getElementById('fpScore').value) || 0;
+            const minIv    = parseFloat(document.getElementById('fpMinIv').value) || 0;
+            const side     = document.getElementById('tbSide').value;
+
+            filteredOptions = currentOptions.filter(o => {
+                const vol   = o.volume         || 0;
+                const oi    = o.open_interest  || 0;
+                const score = o.hybrid_score   || o.whale_score || 0;
+                let   iv    = o.implied_volatility || 0;
+                if (iv > 0 && iv <= 1) iv *= 100;   // normalize to percentage (mirrors createFlowRow)
+                const type  = (o.option_type || '').toLowerCase();
+                if (vol   < minVol)   return false;
+                if (oi    < minOi)    return false;
+                if (score < minScore) return false;
+                if (iv    < minIv)    return false;
+                if (side !== 'both' && type !== side) return false;
+                return true;
+            });
+
+            document.getElementById('scanMeta').textContent =
+                filteredOptions.length + ' / ' + currentOptions.length + ' results (filtered)';
+
+            renderOptions();
+            updateFilterBadges();
         }
 
         function setStatus(state, text) {
@@ -561,7 +693,7 @@
             { key: 'strike',      label: 'Strike',     sortKey: 'strike' },
             { key: 'expiration_date', label: 'Exp',    sortKey: 'expiration_date' },
             { key: 'dte',         label: 'DTE',        sortKey: 'dte' },
-            { key: '_loc',        label: 'Location',   sortKey: 'moneyness_pct' },
+            { key: '_loc',        label: 'Money',      sortKey: 'moneyness_pct' },
             { key: 'volume',      label: 'Vol (Day)',   sortKey: 'volume' },
             { key: 'open_interest', label: 'OI',       sortKey: 'open_interest' },
             { key: 'vol_oi_ratio',  label: 'Vol/OI',   sortKey: 'vol_oi_ratio' },
@@ -694,8 +826,8 @@
                 ? `<span class="loc-bar"><span class="loc-track"><span class="loc-marker ${locClass}" style="left:${locPos}%"></span></span><span style="font-size:0.75em;color:#a0aec0">${moneyness}</span></span>`
                 : '--';
 
-            // exp formatting
-            const expStr = (opt.expiration_date || '').replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$2/$3');
+            // exp formatting — backend may use 'expiration' or 'expiration_date'
+            const expStr = (opt.expiration_date || opt.expiration || '').replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$2/$3');
 
             const optSym = opt.option_symbol || '';
             return `<tr class="${rowClass}" onclick="showOptionDetails('${optSym}')">
@@ -1086,6 +1218,10 @@
                 document.getElementById('badge-high-score').textContent = '0';
                 document.getElementById('badge-high-volume').textContent = '0';
                 document.getElementById('badge-near-expiry').textContent = '0';
+                document.getElementById('badge-calls').textContent       = '0';
+                document.getElementById('badge-puts').textContent        = '0';
+                document.getElementById('badge-unusual-vol').textContent = '0';
+                document.getElementById('badge-high-iv').textContent     = '0';
                 return;
             }
             
@@ -1114,13 +1250,23 @@
                 }).length
             };
             
+            const voloiRatio = o => Number(o.vol_oi_ratio || (o.open_interest > 0 ? o.volume / o.open_interest : 0));
+            let ivNorm = o => { let v = Number(o.implied_volatility || 0); if (v > 0 && v <= 1) v *= 100; return v; };
+
+            counts.calls      = currentOptions.filter(o => (o.option_type||'').toUpperCase() === 'CALL').length;
+            counts.puts       = currentOptions.filter(o => (o.option_type||'').toUpperCase() === 'PUT').length;
+            counts.unusualVol = currentOptions.filter(o => voloiRatio(o) >= 5).length;
+            counts.highIv     = currentOptions.filter(o => ivNorm(o) >= 60).length;
+
             // Mettre à jour les badges
             document.getElementById('badge-all').textContent = counts.all;
             document.getElementById('badge-high-score').textContent = counts.highScore;
             document.getElementById('badge-high-volume').textContent = counts.highVolume;
             document.getElementById('badge-near-expiry').textContent = counts.nearExpiry;
-            
-            console.log('🏆 Badges mis à jour:', counts);
+            document.getElementById('badge-calls').textContent      = counts.calls;
+            document.getElementById('badge-puts').textContent       = counts.puts;
+            document.getElementById('badge-unusual-vol').textContent = counts.unusualVol;
+            document.getElementById('badge-high-iv').textContent    = counts.highIv;
         }
 
 
@@ -1172,11 +1318,40 @@
                 case 'near-expiry':
                     filteredOptions = currentOptions.filter(opt => {
                         const dte = Number(opt.dte || opt.days_to_expiration || 0);
-                        return dte <= 7; // Expiration proche (7 jours ou moins)
+                        return dte <= 7;
                     });
-                    console.log(`⏰ Seuil expiration proche: 7 jours`);
                     break;
-                    
+
+                case 'calls':
+                    filteredOptions = currentOptions.filter(opt =>
+                        (opt.option_type || '').toUpperCase() === 'CALL'
+                    );
+                    break;
+
+                case 'puts':
+                    filteredOptions = currentOptions.filter(opt =>
+                        (opt.option_type || '').toUpperCase() === 'PUT'
+                    );
+                    break;
+
+                case 'unusual-vol': {
+                    filteredOptions = currentOptions.filter(opt => {
+                        const ratio = Number(opt.vol_oi_ratio ||
+                            (opt.open_interest > 0 ? opt.volume / opt.open_interest : 0));
+                        return ratio >= 5;
+                    });
+                    break;
+                }
+
+                case 'high-iv': {
+                    filteredOptions = currentOptions.filter(opt => {
+                        let iv = Number(opt.implied_volatility || 0);
+                        if (iv > 0 && iv <= 1) iv *= 100;
+                        return iv >= 60;
+                    });
+                    break;
+                }
+
                 default:
                     filteredOptions = [...currentOptions];
             }

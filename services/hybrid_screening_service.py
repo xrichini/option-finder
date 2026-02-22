@@ -165,7 +165,16 @@ class HybridScreeningService(ScreeningService):
                         "analysis_type": "hybrid",
                         "analysis_timestamp": datetime.now().isoformat(),
                         "tradier_enabled": True,
-                        "polygon_enabled": self.hybrid_service.polygon_enabled
+                        "polygon_enabled": self.hybrid_service.polygon_enabled,
+
+                        # Champs enrichis repropagés depuis l'opportunité de base
+                        "expiration_date": getattr(opp, 'expiration_date', None) or getattr(opp, 'expiration', None),
+                        "vol_oi_ratio":   getattr(opp, 'vol_oi_ratio', 0),
+                        "change_pct":     getattr(opp, 'change_pct', 0),
+                        "stock_volume":   getattr(opp, 'stock_volume', 0),
+                        "sector":         getattr(opp, 'sector', ''),
+                        "moneyness":      getattr(opp, 'moneyness', ''),
+                        "moneyness_pct":  getattr(opp, 'moneyness_pct', 0),
                     }
                     
                     enriched_opportunities.append(enriched_opp)
@@ -202,7 +211,16 @@ class HybridScreeningService(ScreeningService):
                         
                         "data_freshness": "stale",
                         "analysis_type": "fallback",
-                        "error": str(e)
+                        "error": str(e),
+
+                        # Champs enrichis repropagés depuis l'opportunité de base
+                        "expiration_date": getattr(opp, 'expiration_date', None) or getattr(opp, 'expiration', None),
+                        "vol_oi_ratio":   getattr(opp, 'vol_oi_ratio', 0),
+                        "change_pct":     getattr(opp, 'change_pct', 0),
+                        "stock_volume":   getattr(opp, 'stock_volume', 0),
+                        "sector":         getattr(opp, 'sector', ''),
+                        "moneyness":      getattr(opp, 'moneyness', ''),
+                        "moneyness_pct":  getattr(opp, 'moneyness_pct', 0),
                     }
                     
                     enriched_opportunities.append(fallback_opp)

@@ -294,10 +294,10 @@ class OptionsOpportunity(BaseModel):
     moneyness_pct: float = 0.0  # % distance strike/sous-jacent
 
     # --- Métriques historiques comparatives (calculées depuis options_history.db) ---
-    iv_rank: float = 0.0        # IV Rank 52 semaines (0-100)
+    iv_rank: float = 0.0  # IV Rank 52 semaines (0-100)
     iv_percentile: float = 0.0  # IV Percentile 252j (0-100)
-    oi_spike_ratio: float = 0.0 # OI aujourd'hui / avg OI 5j
-    vol_trend_ratio: float = 0.0 # Vol aujourd'hui / avg Vol 5j
+    oi_spike_ratio: float = 0.0  # OI aujourd'hui / avg OI 5j
+    vol_trend_ratio: float = 0.0  # Vol aujourd'hui / avg Vol 5j
 
 
 class ErrorResponse(BaseModel):

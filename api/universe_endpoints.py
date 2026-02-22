@@ -19,7 +19,7 @@ universe_router = APIRouter(prefix="/api/universe", tags=["universe"])
 _CACHE: dict = {}
 _CACHE_TTL = 86400  # 24h en secondes
 
-SP500_URL    = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
+SP500_URL = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
 NASDAQ100_URL = "https://en.wikipedia.org/wiki/Nasdaq-100"
 
 HEADERS = {
@@ -33,6 +33,7 @@ HEADERS = {
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _cached(key: str) -> Optional[List[str]]:
     entry = _CACHE.get(key)
@@ -49,7 +50,11 @@ def _fetch_sp500() -> List[str]:
     """Scrape la première table Wikipedia de la liste S&P 500."""
     try:
         import pandas as pd
-        tables = pd.read_html(SP500_URL, header=0)
+        from io import StringIO
+
+        resp = requests.get(SP500_URL, headers=HEADERS, timeout=15)
+        resp.raise_for_status()
+        tables = pd.read_html(StringIO(resp.text), header=0)
         df = tables[0]
         # Colonne ticker : "Symbol" ou "Ticker symbol"
         col = next((c for c in df.columns if "symbol" in c.lower()), df.columns[0])
@@ -72,13 +77,18 @@ def _fetch_nasdaq100() -> List[str]:
     """Scrape la table des composantes Nasdaq-100 depuis Wikipedia."""
     try:
         import pandas as pd
-        tables = pd.read_html(NASDAQ100_URL, header=0)
+        from io import StringIO
+
+        resp = requests.get(NASDAQ100_URL, headers=HEADERS, timeout=15)
+        resp.raise_for_status()
+        tables = pd.read_html(StringIO(resp.text), header=0)
         # La table des composantes contient "Ticker" ou "Symbol"
         for df in tables:
             cols_lower = [c.lower() for c in df.columns]
             if any("ticker" in c or "symbol" in c for c in cols_lower):
                 col = next(
-                    c for c in df.columns
+                    c
+                    for c in df.columns
                     if "ticker" in c.lower() or "symbol" in c.lower()
                 )
                 symbols = (
@@ -90,7 +100,9 @@ def _fetch_nasdaq100() -> List[str]:
                 )
                 symbols = [s for s in symbols if s and len(s) <= 6]
                 if len(symbols) >= 90:
-                    logger.info(f"📋 Nasdaq-100 : {len(symbols)} tickers depuis Wikipedia")
+                    logger.info(
+                        f"📋 Nasdaq-100 : {len(symbols)} tickers depuis Wikipedia"
+                    )
                     return symbols
         raise ValueError("Table Nasdaq-100 introuvable dans la page Wikipedia")
     except Exception as e:
@@ -101,6 +113,7 @@ def _fetch_nasdaq100() -> List[str]:
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
+
 
 @universe_router.get("/sp500")
 async def get_sp500(force_refresh: bool = False):
@@ -145,7 +158,9 @@ async def get_nasdaq100(force_refresh: bool = False):
                 "symbols": cached,
                 "count": len(cached),
                 "cached": True,
-                "cache_age_h": round((time.time() - _CACHE["nasdaq100"]["ts"]) / 3600, 1),
+                "cache_age_h": round(
+                    (time.time() - _CACHE["nasdaq100"]["ts"]) / 3600, 1
+                ),
             }
     try:
         symbols = _fetch_nasdaq100()

@@ -12,6 +12,8 @@ from typing import List, Optional, Any, Dict
 from datetime import datetime
 import logging
 import math
+import asyncio
+import threading
 
 from services.hybrid_screening_service import HybridScreeningService
 
@@ -40,6 +42,32 @@ hybrid_router = APIRouter(prefix="/api/hybrid", tags=["Hybrid Analytics"])
 
 # Service hybride (singleton)
 hybrid_service = HybridScreeningService()
+
+# Progress state (updated by scan callback, polled by UI)
+_scan_progress: dict = {
+    "active": False,
+    "current": 0,
+    "total": 0,
+    "symbol": "",
+    "phase": "idle",
+    "percent": 0,
+    "complete": False,
+}
+
+# Scan result storage (populated when background scan completes)
+_scan_result: dict = {"ready": False, "data": None, "error": None}
+
+
+@hybrid_router.get("/scan-progress")
+async def get_scan_progress():
+    """Retourne l'avancement du scan en cours (pour polling UI)."""
+    return _scan_progress
+
+
+@hybrid_router.get("/scan-result")
+async def get_scan_result():
+    """Retourne le résultat du dernier scan background (prêt quand ready=True)."""
+    return _scan_result
 
 
 # Pydantic models for request validation
@@ -190,174 +218,195 @@ async def screen_options_hybrid_background(
 
 class ScanAllRequest(BaseModel):
     symbols: Optional[List[str]] = None
-    max_dte: int = 30
-    min_volume: int = 50
-    min_oi: int = 25
-    min_whale_score: float = 50.0
+    max_dte: int = 7
+    min_volume: int = 500
+    min_oi: int = 100
+    min_whale_score: float = 30.0
 
 
-@hybrid_router.post("/scan-all")
-async def scan_all_options(request: ScanAllRequest = None):
+async def _do_scan_async(symbols, max_dte, min_volume, min_oi, min_whale_score):
     """
-    Scanning complet de TOUS les types d'options (Call ET Put) pour tous les symboles
-
-    Cette fonction garantit un scan exhaustif de toutes les opportunités disponibles,
-    avec statistiques détaillées par type d'option.
-
-    Args:
-        request: Paramètres de la requête (symbols, max_dte, min_volume, etc.)
-
-    Returns:
-        Toutes les opportunités Call + Put avec statistiques détaillées
+    Logique de scan complète (async).  Appelée depuis _run_scan_thread dans son
+    propre event-loop afin de ne PAS bloquer l'event-loop principal FastAPI.
+    Met à jour _scan_progress au fil du scan et stocke le résultat dans _scan_result.
     """
+    async def _progress(current: int, total: int, symbol: str, details: str):
+        pct = int(current / total * 100) if total else 0
+        _scan_progress.update({
+            "active": True,
+            "current": current,
+            "total": total,
+            "symbol": symbol,
+            "phase": details,
+            "percent": pct,
+            "complete": False,
+        })
+        if total > 0 and current % 10 == 0 and current > 0:
+            logger.info(f"\u23f3 Scan: {current}/{total} ({pct}%)")
+
     try:
-        # Utiliser les paramètres de la requête ou des valeurs par défaut
-        if request is None:
-            request = ScanAllRequest()
-
-        # Si aucun symbole fourni, utiliser une liste par défaut
-        symbols = request.symbols or ["AAPL", "TSLA", "NVDA", "SPY", "MSFT"]
-        max_dte = request.max_dte
-        min_volume = request.min_volume
-        min_oi = request.min_oi
-        min_whale_score = request.min_whale_score
-
-        logger.info(f"🔍 Scan COMPLET Call+Put demandé: {len(symbols)} symboles")
-
-        # Force option_type="both" pour garantir scan complet
         opportunities = await hybrid_service.screen_options_hybrid(
             symbols=symbols,
-            option_type="both",  # Force scan des deux types
+            option_type="both",
             max_dte=max_dte,
             min_volume=min_volume,
             min_oi=min_oi,
             min_whale_score=min_whale_score,
-            enable_ai=False,  # Plus rapide sans IA
+            enable_ai=False,
+            progress_callback=_progress,
         )
+    except Exception as exc:
+        logger.error(f"❌ Scan background échoué: {exc}")
+        _scan_progress.update({"active": False, "complete": True, "phase": "error", "percent": 0})
+        _scan_result.update({"ready": False, "data": None, "error": str(exc)})
+        return
 
-        # Statistiques par type d'option
-        call_opportunities = [
-            opp for opp in opportunities if opp.get("option_type") == "CALL"
-        ]
-        put_opportunities = [
-            opp for opp in opportunities if opp.get("option_type") == "PUT"
-        ]
+    # ── Build response ──────────────────────────────────────────────────────
+    call_opportunities = [o for o in opportunities if o.get("option_type") == "CALL"]
+    put_opportunities  = [o for o in opportunities if o.get("option_type") == "PUT"]
 
-        # Calcul de métriques par type
-        def calculate_type_stats(type_opportunities):
-            if not type_opportunities:
-                return {
-                    "count": 0,
-                    "avg_hybrid_score": 0,
-                    "avg_volume": 0,
-                    "avg_oi": 0,
-                    "best_opportunity": None,
-                }
-
-            return {
-                "count": len(type_opportunities),
-                "avg_hybrid_score": sum(
-                    o.get("hybrid_score", 0) for o in type_opportunities
-                )
-                / len(type_opportunities),
-                "avg_volume": sum(o.get("volume", 0) for o in type_opportunities)
-                / len(type_opportunities),
-                "avg_oi": sum(o.get("open_interest", 0) for o in type_opportunities)
-                / len(type_opportunities),
-                "best_opportunity": max(
-                    type_opportunities, key=lambda x: x.get("hybrid_score", 0)
-                ),
-            }
-
-        call_stats = calculate_type_stats(call_opportunities)
-        put_stats = calculate_type_stats(put_opportunities)
-
-        # Réponse dans le format attendu par l'interface JavaScript
-        response = {
-            "opportunities": opportunities,  # Format attendu par l'interface
-            "total_count": len(opportunities),
-            "success": True,
-            "timestamp": datetime.now().isoformat(),
-            "scan_type": "COMPLETE_CALL_PUT",
-            "screening_params": {
-                "symbols_count": len(symbols),
-                "symbols": symbols,
-                "option_type": "both",  # Confirmé
-                "max_dte": max_dte,
-                "min_volume": min_volume,
-                "min_oi": min_oi,
-                "min_whale_score": min_whale_score,
-            },
-            "detailed_results": {
-                "all_opportunities": opportunities,
-                "total_count": len(opportunities),
-                # Séparation Call vs Put
-                "call_opportunities": call_opportunities,
-                "put_opportunities": put_opportunities,
-                # Statistiques comparatives
-                "statistics": {
-                    "calls": call_stats,
-                    "puts": put_stats,
-                    "call_put_ratio": (
-                        len(call_opportunities) / len(put_opportunities)
-                        if len(put_opportunities) > 0
-                        else None
-                    ),
-                    "best_overall": (
-                        max(opportunities, key=lambda x: x.get("hybrid_score", 0))
-                        if opportunities
-                        else None
-                    ),
-                },
-                # Distribution par symbole
-                "by_symbol": {},
-            },
-            "data_sources": {
-                "tradier": True,
-                "polygon": hybrid_service.hybrid_service.polygon_enabled,
-                "unusual_whales": True,
-                "historical_database": True,
-            },
+    def _type_stats(ops):
+        if not ops:
+            return {"count": 0, "avg_hybrid_score": 0, "avg_volume": 0, "avg_oi": 0, "best_opportunity": None}
+        return {
+            "count": len(ops),
+            "avg_hybrid_score": sum(o.get("hybrid_score", 0) for o in ops) / len(ops),
+            "avg_volume":       sum(o.get("volume", 0) for o in ops) / len(ops),
+            "avg_oi":           sum(o.get("open_interest", 0) for o in ops) / len(ops),
+            "best_opportunity": max(ops, key=lambda x: x.get("hybrid_score", 0)),
         }
 
-        # Ajout statistiques par symbole
-        for symbol in symbols:
-            symbol_ops = [
-                opp for opp in opportunities if opp.get("underlying_symbol") == symbol
-            ]
-            symbol_calls = [
-                opp for opp in symbol_ops if opp.get("option_type") == "CALL"
-            ]
-            symbol_puts = [opp for opp in symbol_ops if opp.get("option_type") == "PUT"]
+    call_stats = _type_stats(call_opportunities)
+    put_stats  = _type_stats(put_opportunities)
 
-            response["detailed_results"]["by_symbol"][symbol] = {
-                "total": len(symbol_ops),
-                "calls": len(symbol_calls),
-                "puts": len(symbol_puts),
-                "best_call": (
-                    max(symbol_calls, key=lambda x: x.get("hybrid_score", 0))
-                    if symbol_calls
-                    else None
+    response = {
+        "opportunities": opportunities,
+        "total_count": len(opportunities),
+        "success": True,
+        "timestamp": datetime.now().isoformat(),
+        "scan_type": "COMPLETE_CALL_PUT",
+        "screening_params": {
+            "symbols_count": len(symbols),
+            "symbols": symbols,
+            "option_type": "both",
+            "max_dte": max_dte,
+            "min_volume": min_volume,
+            "min_oi": min_oi,
+            "min_whale_score": min_whale_score,
+        },
+        "detailed_results": {
+            "all_opportunities": opportunities,
+            "total_count": len(opportunities),
+            "call_opportunities": call_opportunities,
+            "put_opportunities": put_opportunities,
+            "statistics": {
+                "calls": call_stats,
+                "puts": put_stats,
+                "call_put_ratio": (
+                    len(call_opportunities) / len(put_opportunities)
+                    if len(put_opportunities) > 0 else None
                 ),
-                "best_put": (
-                    max(symbol_puts, key=lambda x: x.get("hybrid_score", 0))
-                    if symbol_puts
-                    else None
+                "best_overall": (
+                    max(opportunities, key=lambda x: x.get("hybrid_score", 0))
+                    if opportunities else None
                 ),
-            }
+            },
+            "by_symbol": {},
+        },
+        "data_sources": {
+            "tradier": True,
+            "polygon": hybrid_service.hybrid_service.polygon_enabled,
+            "unusual_whales": True,
+            "historical_database": True,
+        },
+    }
 
-        logger.info(
-            f"✅ Scan complet terminé: {len(opportunities)} résultats ({len(call_opportunities)} CALLS, {len(put_opportunities)} PUTS)"
+    for symbol in symbols:
+        sym_ops   = [o for o in opportunities if o.get("underlying_symbol") == symbol]
+        sym_calls = [o for o in sym_ops if o.get("option_type") == "CALL"]
+        sym_puts  = [o for o in sym_ops if o.get("option_type") == "PUT"]
+        response["detailed_results"]["by_symbol"][symbol] = {
+            "total": len(sym_ops),
+            "calls": len(sym_calls),
+            "puts":  len(sym_puts),
+            "best_call": (max(sym_calls, key=lambda x: x.get("hybrid_score", 0)) if sym_calls else None),
+            "best_put":  (max(sym_puts,  key=lambda x: x.get("hybrid_score", 0)) if sym_puts  else None),
+        }
+
+    logger.info(
+        f"✅ Scan complet terminé: {len(opportunities)} résultats "
+        f"({len(call_opportunities)} CALLS, {len(put_opportunities)} PUTS)"
+    )
+
+    response = sanitize_floats(response)
+
+    # ── Store result + mark complete ─────────────────────────────────────────
+    _scan_result.update({"ready": True, "data": response, "error": None})
+    _scan_progress.update({
+        "active": False,
+        "current": len(symbols),
+        "total": len(symbols),
+        "symbol": "",
+        "phase": "done",
+        "percent": 100,
+        "complete": True,
+    })
+
+
+def _run_scan_thread(symbols, max_dte, min_volume, min_oi, min_whale_score):
+    """
+    Wrapper synchrone exécuté dans un thread séparé (BackgroundTasks).
+    Crée son propre event-loop pour lancer _do_scan_async sans bloquer
+    l'event-loop principal de FastAPI — ce qui permet au polling /scan-progress
+    de répondre pendant le scan.
+    """
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_until_complete(
+            _do_scan_async(symbols, max_dte, min_volume, min_oi, min_whale_score)
         )
+    finally:
+        loop.close()
 
-        # Sanitize all float values before returning
-        response = sanitize_floats(response)
 
-        return response
+@hybrid_router.post("/scan-all")
+async def scan_all_options(background_tasks: BackgroundTasks, request: ScanAllRequest = None):
+    """
+    Lance un scan complet Call+Put en tâche de fond et retourne immédiatement.
+    L'UI doit:
+      1. Démarrer en polling GET /api/hybrid/scan-progress jusqu'à complete=true
+      2. Récupérer le résultat via GET /api/hybrid/scan-result
+    """
+    if request is None:
+        request = ScanAllRequest()
 
-    except Exception as e:
-        logger.error(f"❌ Erreur scan complet Call+Put: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    symbols       = request.symbols or ["AAPL", "TSLA", "NVDA", "SPY", "MSFT"]
+    max_dte       = request.max_dte
+    min_volume    = request.min_volume
+    min_oi        = request.min_oi
+    min_whale_score = request.min_whale_score
+
+    logger.info(f"🔍 Scan COMPLET Call+Put demandé: {len(symbols)} symboles — lancement background")
+
+    # Réinitialiser l'état avant de lancer
+    _scan_result.update({"ready": False, "data": None, "error": None})
+    _scan_progress.update({
+        "active": True,
+        "current": 0,
+        "total": len(symbols),
+        "symbol": "",
+        "phase": "init",
+        "percent": 0,
+        "complete": False,
+    })
+
+    # Lancer le scan dans un thread séparé (ne bloque pas l'event-loop)
+    background_tasks.add_task(
+        _run_scan_thread, symbols, max_dte, min_volume, min_oi, min_whale_score
+    )
+
+    return {"status": "started", "total_symbols": len(symbols)}
 
 
 @hybrid_router.get("/recommendations")

@@ -55,9 +55,7 @@ class HistoryService:
             con = sqlite3.connect(self.db_path)
             existing = {
                 row[1]
-                for row in con.execute(
-                    "PRAGMA table_info(option_history)"
-                ).fetchall()
+                for row in con.execute("PRAGMA table_info(option_history)").fetchall()
             }
             new_cols = {
                 "implied_volatility": "REAL DEFAULT 0",
@@ -101,26 +99,30 @@ class HistoryService:
 
         rows = []
         for opp in opportunities:
-            d = opp.dict() if hasattr(opp, "dict") else (
-                opp if isinstance(opp, dict) else {}
+            d = (
+                opp.dict()
+                if hasattr(opp, "dict")
+                else (opp if isinstance(opp, dict) else {})
             )
             iv = float(d.get("implied_volatility") or 0)
             if 0 < iv <= 1:
                 iv *= 100  # normalise en % si fourni en fraction
 
-            rows.append((
-                d.get("option_symbol") or d.get("symbol", ""),
-                d.get("underlying_symbol") or d.get("underlying", ""),
-                today,
-                int(d.get("volume") or 0),
-                int(d.get("open_interest") or 0),
-                float(d.get("last") or d.get("last_price") or 0),
-                float(d.get("whale_score") or 0),
-                float(d.get("vol_oi_ratio") or 0),
-                float(iv),
-                float(d.get("strike") or 0),
-                str(d.get("option_type") or ""),
-            ))
+            rows.append(
+                (
+                    d.get("option_symbol") or d.get("symbol", ""),
+                    d.get("underlying_symbol") or d.get("underlying", ""),
+                    today,
+                    int(d.get("volume") or 0),
+                    int(d.get("open_interest") or 0),
+                    float(d.get("last") or d.get("last_price") or 0),
+                    float(d.get("whale_score") or 0),
+                    float(d.get("vol_oi_ratio") or 0),
+                    float(iv),
+                    float(d.get("strike") or 0),
+                    str(d.get("option_type") or ""),
+                )
+            )
 
         if not rows:
             return 0
@@ -128,7 +130,8 @@ class HistoryService:
         try:
             con = sqlite3.connect(self.db_path)
             # Crée la table + index si première utilisation
-            con.execute("""
+            con.execute(
+                """
                 CREATE TABLE IF NOT EXISTS option_history (
                     id                 INTEGER PRIMARY KEY AUTOINCREMENT,
                     option_symbol      TEXT    NOT NULL,
@@ -144,15 +147,20 @@ class HistoryService:
                     option_type        TEXT    DEFAULT '',
                     created_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
-            """)
-            con.execute("""
+            """
+            )
+            con.execute(
+                """
                 CREATE UNIQUE INDEX IF NOT EXISTS idx_opthist_sym_date
                 ON option_history (option_symbol, scan_date)
-            """)
-            con.execute("""
+            """
+            )
+            con.execute(
+                """
                 CREATE INDEX IF NOT EXISTS idx_opthist_underlying
                 ON option_history (underlying, scan_date)
-            """)
+            """
+            )
 
             count = 0
             for row in rows:
@@ -358,7 +366,11 @@ class HistoryService:
             return opp.get(key, default) if isinstance(opp, dict) else default
 
         def _set(opp: Any, key: str, value: Any):
-            if hasattr(opp, key) or isinstance(opp, object) and not isinstance(opp, dict):
+            if (
+                hasattr(opp, key)
+                or isinstance(opp, object)
+                and not isinstance(opp, dict)
+            ):
                 try:
                     object.__setattr__(opp, key, value)
                 except Exception:
@@ -409,9 +421,7 @@ class HistoryService:
         if con is None:
             return {"error": "options_history.db introuvable", "db_path": self.db_path}
         try:
-            total = con.execute(
-                "SELECT COUNT(*) FROM option_history"
-            ).fetchone()[0]
+            total = con.execute("SELECT COUNT(*) FROM option_history").fetchone()[0]
             days = con.execute(
                 "SELECT COUNT(DISTINCT scan_date) FROM option_history"
             ).fetchone()[0]

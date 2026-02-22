@@ -60,8 +60,9 @@ class ScreeningService:
             logger.warning(f"Impossible de récupérer les quotes sous-jacents: {e}")
 
         for i, symbol in enumerate(symbols):
+            logger.info(f"\u23f3 [{i+1}/{len(symbols)}] {symbol}")
             if progress_callback:
-                await progress_callback(i, len(symbols), f"Analyse {symbol}...")
+                await progress_callback(i + 1, len(symbols), f"Analyse {symbol}...")
 
             try:
                 # Récupération des chaînes d'options avec EnhancedTradierClient
@@ -111,7 +112,9 @@ class ScreeningService:
         try:
             saved_count = self.unusual_whales_service.save_scan_results(opportunities)
             if saved_count > 0:
-                logger.info(f"💾 UnusualWhales: {saved_count} opportunités sauvegardées")
+                logger.info(
+                    f"💾 UnusualWhales: {saved_count} opportunités sauvegardées"
+                )
         except Exception as e:
             logger.warning(f"Erreur sauvegarde unusual_whales: {e}")
 
