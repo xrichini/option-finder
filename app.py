@@ -28,9 +28,11 @@ from models.api_models import (
 from api.hybrid_endpoints import hybrid_router
 from api.short_interest_endpoints import short_interest_router
 from api.filtering_endpoints import filtering_router
+from api.universe_endpoints import universe_router
 
 # Persistence
 from services.persistence_service import persistence_service
+from services.history_service import history_service
 
 # Sécurité (API Key + Rate Limiting)
 from services.security_service import setup_security
@@ -77,6 +79,7 @@ config_service = ConfigService()
 app.include_router(hybrid_router)
 app.include_router(short_interest_router)
 app.include_router(filtering_router)
+app.include_router(universe_router)
 
 # Appliquer la sécurité (API Key middleware + rate limiting)
 setup_security(app)
@@ -516,6 +519,16 @@ async def get_top_stored_opportunities(min_score: float = 60.0, limit: int = 100
 async def get_db_stats():
     """Statistiques de la base de données SQLite"""
     return persistence_service.get_stats()
+
+
+@app.get("/api/history/stats")
+async def get_history_stats(underlying: str = None):
+    """Statistiques options_history.db — IV Rank, Vol Trend, couverture"""
+    try:
+        stats = history_service.get_stats(underlying=underlying)
+        return {"status": "ok", "data": stats}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
 
 
 # ==============================================================================
