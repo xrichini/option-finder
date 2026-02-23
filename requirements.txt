@@ -38,6 +38,9 @@ aiosqlite==0.19.0        # Support async SQLite (optionnel)
 
 # Sécurité & Rate limiting
 slowapi==0.1.9           # Rate limiting pour FastAPI
+
+# Scan daemon (scan_daemon.py)
+apscheduler==3.10.4      # Planificateur de tâches (scan continu sur VM)
 structlog==23.2.0         # Logging structuré
 
 # Testing et développement

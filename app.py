@@ -37,6 +37,7 @@ from api.universe_endpoints import universe_router
 from api.earnings_endpoints import earnings_router
 from api.fmp_enrichment import fmp_enrichment_router
 from api.quotes_refresh import quotes_refresh_router
+from api.daemon_endpoints import daemon_router
 
 # Persistence
 from services.persistence_service import persistence_service
@@ -86,6 +87,7 @@ app.include_router(universe_router)
 app.include_router(earnings_router)
 app.include_router(fmp_enrichment_router)
 app.include_router(quotes_refresh_router)
+app.include_router(daemon_router)
 
 # Appliquer la sécurité (API Key middleware + rate limiting)
 setup_security(app)
