@@ -312,13 +312,15 @@ class ScreeningService:
             return []
 
         filtered_options = []
-        now = datetime.now()
+        today = datetime.now().date()
 
         for contract in contracts:
             try:
-                # Calcul du DTE
-                exp_date = datetime.strptime(contract.expiration, "%Y-%m-%d")
-                dte = (exp_date - now).days
+                # Calcul du DTE — compare dates (not datetimes) to avoid
+                # intraday rounding: strptime gives midnight, datetime.now()
+                # has hours → floor truncates 3.9 days to 3 instead of 4.
+                exp_date = datetime.strptime(contract.expiration, "%Y-%m-%d").date()
+                dte = (exp_date - today).days
 
                 if 0 <= dte <= max_dte:
                     option_dict = {
@@ -367,13 +369,13 @@ class ScreeningService:
             return []
 
         filtered_options = []
-        now = datetime.now()
+        today = datetime.now().date()
 
         for option in chains.options.option:
             try:
-                # Calcul du DTE
-                exp_date = datetime.strptime(option.expiration_date, "%Y-%m-%d")
-                dte = (exp_date - now).days
+                # Calcul du DTE — same date-only fix as _filter_contracts_by_dte
+                exp_date = datetime.strptime(option.expiration_date, "%Y-%m-%d").date()
+                dte = (exp_date - today).days
 
                 if 0 <= dte <= max_dte:
                     option_dict = {

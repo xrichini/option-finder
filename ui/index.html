@@ -70,6 +70,7 @@
         .tb-btn-filter:hover, .tb-btn-filter.active { color:#fff; border-color:#63b3ed; }
         .tb-btn-refresh { background:#2d3748; color:#a0aec0; border:1px solid #4a5568; width:32px; padding:0; }
         .tb-btn-refresh:hover { color:#fff; border-color:#63b3ed; }
+        .tb-btn-refresh.spinning { animation: spin .6s linear infinite; color:#63b3ed; }
         .tb-status {
             display: flex; align-items: center; gap: 6px;
             font-size: 0.76rem; color: #4a5568; margin-left: auto; white-space: nowrap;
@@ -78,7 +79,22 @@
         .status-idle     { background:#68d391; }
         .status-scanning { background:#f6ad55; animation:pulse 1s infinite; }
         .status-error    { background:#fc8181; }
-        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+        .status-live     { background:#68d391; animation:pulse-live .9s ease-in-out infinite; }
+        @keyframes pulse      { 0%,100%{opacity:1} 50%{opacity:.4} }
+        @keyframes pulse-live { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.55;transform:scale(.7)} }
+        /* ── LIVE toggle button ── */
+        .tb-btn-live {
+            background: #2d3748; color: #718096;
+            border: 1px solid #4a5568;
+            display: flex; align-items: center; gap: 5px;
+        }
+        .tb-btn-live .live-btn-dot {
+            width: 6px; height: 6px; border-radius: 50%;
+            background: #4a5568; flex-shrink: 0;
+            transition: background .2s;
+        }
+        .tb-btn-live.active { color: #fc8181; border-color: rgba(252,129,129,.5); background: rgba(252,129,129,.1); }
+        .tb-btn-live.active .live-btn-dot { background: #fc8181; animation: pulse-live .9s ease-in-out infinite; }
 
         /* ====== FILTER PANEL ====== */
         .filter-panel {
@@ -118,7 +134,36 @@
             border-bottom: 1px solid #1a1d2e;
         }
         .badges-left { display:flex; gap:7px; align-items:center; flex-wrap:wrap; }
-        .badges-right { font-size:.76rem; color:#4a5568; }
+        .badges-right { font-size:.76rem; color:#4a5568; display:flex; align-items:center; gap:10px; }
+        /* ── Live refresh indicator ── */
+        #liveIndicator {
+            display: none; align-items: center; gap: 5px;
+            font-size: .75rem; font-weight: 600;
+            color: #fc8181; letter-spacing: .04em;
+        }
+        .live-dot {
+            width: 7px; height: 7px; background: #fc8181;
+            border-radius: 50%;
+            animation: live-pulse 1.2s ease-in-out infinite;
+        }
+        @keyframes live-pulse {
+            0%, 100% { opacity:1; transform:scale(1); }
+            50%       { opacity:.35; transform:scale(.65); }
+        }
+        .live-refreshed-at { font-size:.7rem; color:#718096; font-weight:400; }
+        @keyframes live-flash {
+            from { background: rgba(66,153,225,.22); }
+            to   { background: transparent; }
+        }
+        .live-flash { animation: live-flash .7s ease-out; }
+        /* ── Sparklines ── */
+        .sparkline-svg {
+            display: inline-block;
+            vertical-align: middle;
+            margin-left: 5px;
+            opacity: .85;
+        }
+        .score-cell { display:inline-flex; align-items:center; gap:0; }
         .ticker-search {
             background: #1a1d2e;
             border: 1px solid #4a5568;
@@ -202,6 +247,15 @@
         .sizzle-bar { display:inline-flex; align-items:center; gap:5px; }
         .sizzle-track { width:50px; height:6px; background:rgba(255,255,255,.1); border-radius:3px; overflow:hidden; }
         .sizzle-fill  { height:100%; border-radius:3px; }
+        /* Score breakdown in modal */
+        .sc-rows { display:flex; flex-direction:column; gap:9px; margin-top:4px; }
+        .sc-row  { display:grid; grid-template-columns:72px 52px 1fr; align-items:center; gap:8px; }
+        .sc-lbl  { font-size:.72rem; color:#a0aec0; white-space:nowrap; }
+        .sc-val  { font-size:.75rem; font-weight:700; text-align:right; white-space:nowrap; font-family:'Courier New',monospace; }
+        .sc-track{ height:7px; background:rgba(255,255,255,.07); border-radius:4px; overflow:hidden; }
+        .sc-fill { height:100%; border-radius:4px; transition:width .4s ease; }
+        .sc-pill { padding:2px 10px; border-radius:12px; font-weight:700; font-size:.82rem; }
+        .sc-divider{ border:none; border-top:1px solid rgba(255,255,255,.07); margin:6px 0; }
         .loc-bar   { display:inline-flex; align-items:center; gap:3px; font-size:.75em; }
         .loc-track { width:60px; height:5px; background:rgba(255,255,255,.1); border-radius:2px; position:relative; }
         .loc-marker { position:absolute; top:-2px; width:9px; height:9px; border-radius:50%; transform:translateX(-50%); }
@@ -317,7 +371,8 @@
             </select>
             <button id="btnScan" class="tb-btn tb-btn-scan" onclick="scanOptions()">&#9654; SCAN</button>
             <button id="btnFilters" class="tb-btn tb-btn-filter" onclick="toggleFilterPanel()" title="Option chain filters — applied during scan">&#9881; Option filters</button>
-            <button class="tb-btn tb-btn-refresh" onclick="applyClientFilters()" title="Re-apply filters on current results">&#8635;</button>
+            <button id="btnRefresh" class="tb-btn tb-btn-refresh" onclick="manualRefresh(this)" title="Fetch fresh quotes now">&#8635;</button>
+            <button id="btnLive" class="tb-btn tb-btn-live" onclick="_toggleLive()" title="Toggle live quotes refresh every 30s"><span class="live-btn-dot"></span>Live</button>
         </div>
         <div class="tb-status">
             <span id="statusDot" class="status-dot"></span>
@@ -369,7 +424,11 @@
             <button class="filter-btn" data-filter="unusual-vol">Vol/OI≥5x <span class="filter-badge" id="badge-unusual-vol">0</span></button>
             <button class="filter-btn" data-filter="high-iv">IV≥60% <span class="filter-badge" id="badge-high-iv">0</span></button>
         </div>
-        <div class="badges-right" id="scanMeta"></div>
+        <div class="badges-right">
+            <button id="btnCsv" onclick="exportCsv()" title="Export filtered results to CSV" style="padding:3px 10px;font-size:11px;border-radius:4px;border:1px solid #4a5568;background:#1a202c;color:#a0aec0;cursor:pointer;display:none">⬇ CSV</button>
+            <span id="liveIndicator"><span class="live-dot"></span>&nbsp;LIVE&nbsp;<span class="live-refreshed-at" id="liveRefreshedAt"></span></span>
+            <span id="scanMeta"></span>
+        </div>
     </div>
 
     <!-- ══════════════════ MAIN CONTENT AREA ══════════════════ -->
@@ -455,7 +514,84 @@
             toggleFilterButtons(false);
             updateUniverseUI();
             document.getElementById('tbUniverse').addEventListener('change', updateUniverseUI);
+            _restoreResults();
         });
+
+        const _LS_KEY = 'flow_scan_results';
+
+        // Fields kept in localStorage — only what renderOptions / modal need
+        const _PERSIST_FIELDS = [
+            'option_symbol','underlying_symbol','underlying','option_type',
+            'strike','expiration_date','dte',
+            'volume','open_interest','vol_oi_ratio',
+            'implied_volatility','delta','theta','vega',
+            'bid','ask','price','underlying_price','current_price','change_pct','change_percentage',
+            'whale_score','hybrid_score','iv_rank','oi_spike_ratio','vol_trend_ratio','sizzle_index',
+            'timestamp','underlying_volume','short_interest_pct',
+        ];
+
+        function _slimOption(o) {
+            const s = {};
+            for (const k of _PERSIST_FIELDS) if (o[k] !== undefined) s[k] = o[k];
+            return s;
+        }
+
+        function _persistResults(tickerCount, elapsed) {
+            try {
+                const slim = currentOptions.map(_slimOption);
+                localStorage.setItem(_LS_KEY, JSON.stringify({
+                    options: slim,
+                    meta: slim.length + ' results · ' + elapsed + 's · ' + tickerCount + ' tickers',
+                    savedAt: new Date().toISOString(),
+                }));
+                console.debug('💾 Scan persisted (' + slim.length + ' rows)');
+            } catch(e) {
+                // Quota exceeded — try saving top-200 only
+                try {
+                    const top = [...currentOptions]
+                        .sort((a,b) => (b.whale_score||b.hybrid_score||0)-(a.whale_score||a.hybrid_score||0))
+                        .slice(0, 200).map(_slimOption);
+                    localStorage.setItem(_LS_KEY, JSON.stringify({
+                        options: top,
+                        meta: top.length + ' results (top 200) · ' + elapsed + 's · ' + tickerCount + ' tickers',
+                        savedAt: new Date().toISOString(),
+                    }));
+                    console.warn('localStorage quota hit — saved top 200 only');
+                } catch(e2) {
+                    console.warn('localStorage persist failed:', e2.message);
+                }
+            }
+        }
+
+        function _restoreResults() {
+            try {
+                const raw = localStorage.getItem(_LS_KEY);
+                if (!raw) return false;
+                const saved = JSON.parse(raw);
+                if (!saved.options || !saved.options.length) return false;
+
+                const savedAt  = new Date(saved.savedAt);
+                const ageMin   = Math.round((Date.now() - savedAt) / 60000);
+                const ageLabel = ageMin < 60 ? ageMin + 'min ago' : Math.round(ageMin/60) + 'h ago';
+
+                currentOptions  = saved.options;
+                filteredOptions = [...currentOptions];
+
+                document.getElementById('scanMeta').textContent =
+                    saved.meta + ' · restored (' + ageLabel + ')';
+
+                renderOptions();
+                toggleFilterButtons(true);
+                updateFilterBadges();
+                setStatus('idle', 'Restored');
+                _loadSparklines();
+                _startLiveRefresh();    // resume live quotes after restore
+                return true;
+            } catch(e) {
+                console.warn('localStorage restore failed:', e);
+                return false;
+            }
+        }
 
         async function loadConfigFromAPI() {
             try {
@@ -611,6 +747,9 @@
                     currentOptions.length + ' results · ' + elapsed + 's · ' + symbols.length + ' tickers';
 
                 renderOptions();
+                _startLiveRefresh();
+                _persistResults(symbols.length, elapsed);
+                _loadSparklines();
                 toggleFilterButtons(true);
                 updateFilterBadges();
                 setStatus('idle', 'Done');
@@ -659,12 +798,54 @@
             updateFilterBadges();
         }
 
+        function exportCsv() {
+            if (!filteredOptions.length) return;
+            const cols = [
+                ['Time',        o => o.timestamp ? new Date(o.timestamp).toLocaleTimeString('en-US',{hour12:false}) : ''],
+                ['Symbol',      o => o.underlying_symbol || o.underlying || ''],
+                ['Side',        o => (o.option_type || '').toUpperCase()],
+                ['Strike',      o => o.strike || ''],
+                ['Expiration',  o => o.expiration_date || o.expiration || ''],
+                ['DTE',         o => o.dte || ''],
+                ['Moneyness',   o => o.moneyness || ''],
+                ['Volume',      o => o.volume || 0],
+                ['OI',          o => o.open_interest || 0],
+                ['Vol/OI',      o => Number(o.vol_oi_ratio || 0).toFixed(2)],
+                ['Delta',       o => Number(o.delta || 0).toFixed(3)],
+                ['IV%',         o => { let v = Number(o.implied_volatility || 0); if (v > 0 && v <= 1) v *= 100; return v.toFixed(1); }],
+                ['IVR',         o => Number(o.iv_rank || 0).toFixed(1)],
+                ['Sizzle',      o => Number(o.sizzle_index || 0).toFixed(2)],
+                ['VolTrend',    o => Number(o.vol_trend_ratio || 0).toFixed(2)],
+                ['Chg%',        o => Number(o.change_pct || 0).toFixed(2)],
+                ['StkVol',      o => o.stock_volume || 0],
+                ['Sector',      o => o.sector || ''],
+                ['Beta',        o => o.beta != null ? Number(o.beta).toFixed(2) : ''],
+                ['Score',       o => Number(o.whale_score || o.hybrid_score || 0).toFixed(1)],
+                ['Symbol_OCC',  o => o.option_symbol || ''],
+            ];
+            const esc = v => '"' + String(v).replace(/"/g, '""') + '"';
+            const header = cols.map(([h]) => esc(h)).join(',');
+            const rows   = filteredOptions.map(o => cols.map(([, fn]) => esc(fn(o))).join(','));
+            const csv    = [header, ...rows].join('\r\n');
+            const blob   = new Blob([csv], {type: 'text/csv;charset=utf-8;'});
+            const url    = URL.createObjectURL(blob);
+            const a      = Object.assign(document.createElement('a'), {
+                href: url,
+                download: 'squeeze_' + new Date().toISOString().slice(0,10) + '.csv',
+            });
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
         function setStatus(state, text) {
             document.getElementById('statusDot').className  = 'status-dot status-' + state;
             document.getElementById('statusText').textContent = text;
         }
 
         function clearResults() {
+            _stopLiveRefresh();
+            _sparklineCache = {};
+            localStorage.removeItem(_LS_KEY);
             document.getElementById('optionsGrid').innerHTML = '';
             currentOptions  = [];
             filteredOptions = [];
@@ -689,6 +870,8 @@
 
         function toggleFilterButtons(enabled) {
             document.querySelectorAll('.filter-btn').forEach(b => b.disabled = !enabled);
+            const csvBtn = document.getElementById('btnCsv');
+            if (csvBtn) csvBtn.style.display = enabled ? '' : 'none';
         }
 
         function resetActiveFilter() {
@@ -790,10 +973,261 @@
             return v === undefined || v === null ? 0 : v;
         }
 
+        async function manualRefresh(btn) {
+            if (!currentOptions.length) {
+                // Try to restore from localStorage first
+                btn.classList.add('spinning');
+                btn.disabled = true;
+                try { _restoreResults(); } finally {
+                    btn.classList.remove('spinning');
+                    btn.disabled = false;
+                }
+                return;
+            }
+            btn.classList.add('spinning');
+            btn.disabled = true;
+            try {
+                await _doLiveRefresh();
+                applyClientFilters();
+            } finally {
+                btn.classList.remove('spinning');
+                btn.disabled = false;
+            }
+        }
+
         function tableSort(key) {
             if (tableSortKey === key) tableSortAsc = !tableSortAsc;
             else { tableSortKey = key; tableSortAsc = false; }
             renderOptions();
+        }
+
+        // ── Live Quotes Refresh (30s) ─────────────────────────────────────────
+        // Only volatile fields are refreshed: volume, OI, delta, IV, chg%, stk_vol,
+        // moneyness. Static fields (sector, beta, insider, IVR, V5d, score) are NEVER
+        // re-fetched here — they don't change intraday.
+        let _liveRefreshTimer = null;
+        let _sparklineCache = {};  // {option_symbol: [score_d1,...,score_today]}
+        const _LIVE_REFRESH_MS = 30_000;
+
+        let _liveEnabled = true;  // default ON, user can toggle
+
+        function _toggleLive() {
+            if (_liveRefreshTimer) {
+                _liveEnabled = false;
+                _stopLiveRefresh();
+            } else {
+                _liveEnabled = true;
+                if (currentOptions.length) _startLiveRefresh();
+            }
+        }
+
+        function _startLiveRefresh() {
+            _stopLiveRefresh();
+            if (!_liveEnabled) return;
+            _liveRefreshTimer = setInterval(_doLiveRefresh, _LIVE_REFRESH_MS);
+            // Visual: button active + status dot live
+            const btn = document.getElementById('btnLive');
+            if (btn) btn.classList.add('active');
+            const el = document.getElementById('liveIndicator');
+            if (el) el.style.display = 'inline-flex';
+            setStatus('live', 'Live');
+        }
+
+        function _stopLiveRefresh() {
+            if (_liveRefreshTimer) { clearInterval(_liveRefreshTimer); _liveRefreshTimer = null; }
+            const btn = document.getElementById('btnLive');
+            if (btn) btn.classList.remove('active');
+            const el = document.getElementById('liveIndicator');
+            if (el) el.style.display = 'none';
+            // Restore status dot only if not scanning
+            if (!isLoading) setStatus('idle', 'Done');
+        }
+
+        async function _doLiveRefresh() {
+            if (!currentOptions.length) return;
+
+            const optSyms = [...new Set(currentOptions.map(o => o.option_symbol).filter(Boolean))];
+            const undSyms = [...new Set(
+                currentOptions.map(o => (o.underlying_symbol || o.underlying || '')).filter(Boolean)
+            )];
+            if (!optSyms.length) return;
+
+            try {
+                const resp = await fetch('/api/quotes/refresh', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({option_symbols: optSyms, underlying_symbols: undSyms})
+                });
+                if (!resp.ok) return;
+                const data = await resp.json();
+
+                const optQ = data.options     || {};
+                const undQ = data.underlyings || {};
+
+                for (const opt of currentOptions) {
+                    const sym    = (opt.option_symbol || '').toUpperCase();
+                    const undSym = (opt.underlying_symbol || opt.underlying || '').toUpperCase();
+                    const q  = sym    ? optQ[sym]    : null;
+                    const uq = undSym ? undQ[undSym] : null;
+                    if (!q && !uq) continue;
+
+                    if (q) {
+                        if (q.volume            != null) opt.volume             = q.volume;
+                        if (q.open_interest     != null) opt.open_interest      = q.open_interest;
+                        if (q.delta             != null) opt.delta              = q.delta;
+                        if (q.implied_volatility!= null) opt.implied_volatility = q.implied_volatility;
+                        if (q.change_pct        != null) opt.change_pct         = q.change_pct;
+                        const vol = opt.volume || 0;
+                        const oi  = opt.open_interest || 0;
+                        opt.vol_oi_ratio = oi > 0 ? parseFloat((vol / oi).toFixed(2)) : 0;
+                    }
+                    if (uq) {
+                        if (uq.stock_volume != null) opt.stock_volume = uq.stock_volume;
+                        if (uq.last && opt.strike) {
+                            const pct      = (opt.strike - uq.last) / uq.last * 100;
+                            opt.moneyness_pct = parseFloat(pct.toFixed(2));
+                            const isCall   = (opt.option_type || '').toLowerCase() === 'call';
+                            opt.moneyness  = Math.abs(pct) < 2 ? 'ATM'
+                                           : (isCall ? (pct < 0 ? 'ITM' : 'OTM')
+                                                     : (pct > 0 ? 'ITM' : 'OTM'));
+                        }
+                    }
+                    _patchLiveRow(opt, !!q, !!uq);
+                }
+
+                // Update last-refreshed timestamp
+                const tsEl = document.getElementById('liveRefreshedAt');
+                if (tsEl) {
+                    const now = new Date();
+                    tsEl.textContent = now.toLocaleTimeString('en-US',
+                        {hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false});
+                }
+            } catch(e) {
+                console.warn('Live refresh error:', e);
+            }
+        }
+
+        // ── Sparklines ──────────────────────────────────────────────────
+        async function _loadSparklines() {
+            if (!currentOptions.length) return;
+            const syms = [...new Set(
+                currentOptions.map(o => o.option_symbol).filter(Boolean)
+            )];
+            if (!syms.length) return;
+            // Batch in chunks of 150 (URL length limit)
+            const CHUNK = 150;
+            try {
+                for (let i = 0; i < syms.length; i += CHUNK) {
+                    const batch = syms.slice(i, i + CHUNK);
+                    const resp = await fetch(
+                        '/api/history/sparklines?symbols=' + batch.join(',')
+                    );
+                    if (!resp.ok) continue;
+                    const data = await resp.json();
+                    Object.assign(_sparklineCache, data.sparklines || {});
+                }
+                _injectSparklines();
+            } catch(e) {
+                console.warn('Sparklines fetch error:', e);
+            }
+        }
+
+        function _injectSparklines() {
+            for (const opt of filteredOptions) {
+                const sym = opt.option_symbol;
+                if (!sym) continue;
+                const sparkData = _sparklineCache[sym];
+                if (!sparkData || sparkData.length < 2) continue;
+                const tr = document.querySelector(`tr[data-sym="${sym}"]`);
+                if (!tr) continue;
+                const td = tr.querySelector('td[data-field="score"]');
+                if (!td) continue;
+                const score = Number(opt.whale_score || opt.hybrid_score || 0);
+                const scoreCls = score >= 70 ? 'score-high'
+                               : (score >= 40 ? 'score-med' : 'score-low');
+                td.innerHTML =
+                    `<span class="score-pill ${scoreCls}">${score.toFixed(1)}</span>` +
+                    _makeSparklineSvg(sparkData);
+            }
+        }
+
+        function _makeSparklineSvg(values) {
+            if (!values || values.length < 2) return '';
+            const W = 44, H = 14, PAD = 1.5;
+            const min  = Math.min(...values);
+            const max  = Math.max(...values);
+            const rng  = max - min || 1;
+            const pts  = values.map((v, i) => {
+                const x = PAD + (i / (values.length - 1)) * (W - 2 * PAD);
+                const y = (H - PAD) - ((v - min) / rng) * (H - 2 * PAD);
+                return x.toFixed(1) + ',' + y.toFixed(1);
+            }).join(' ');
+            const last  = values[values.length - 1];
+            const first = values[0];
+            const trend = last - first;
+            const color = trend >  2 ? '#68d391'
+                        : trend < -2 ? '#fc8181'
+                        : '#718096';
+            const lx = (PAD + (W - 2 * PAD)).toFixed(1);
+            const ly = ((H - PAD) - ((last - min) / rng) * (H - 2 * PAD)).toFixed(1);
+            return `<svg class="sparkline-svg" width="${W}" height="${H}" ` +
+                   `viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">` +
+                   `<polyline points="${pts}" fill="none" stroke="${color}" ` +
+                   `stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>` +
+                   `<circle cx="${lx}" cy="${ly}" r="2" fill="${color}"/>` +
+                   `</svg>`;
+        }
+
+        function _patchLiveRow(opt, hasOptData, hasUndData) {
+            const sym = opt.option_symbol;
+            if (!sym) return;
+            const tr = document.querySelector(`tr[data-sym="${sym}"]`);
+            if (!tr) return;
+
+            const volume = Number(opt.volume || 0);
+            const oi     = Number(opt.open_interest || 0);
+            const volOi  = Number(opt.vol_oi_ratio || (oi > 0 ? volume/oi : 0)).toFixed(2);
+            const delta  = Number(opt.delta || 0).toFixed(2);
+            let iv = Number(opt.implied_volatility || 0);
+            if (iv > 0 && iv <= 1) iv *= 100;
+            const chgPct = Number(opt.change_pct || 0);
+            const stkVol = Number(opt.stock_volume || 0);
+            const moneyness = opt.moneyness || '';
+            const mPct      = Number(opt.moneyness_pct || 0);
+
+            const chgCls = chgPct > 0 ? 'chg-pos' : (chgPct < 0 ? 'chg-neg' : 'chg-neu');
+            const chgStr = chgPct !== 0
+                ? `<span class="${chgCls}">${chgPct > 0 ? '+' : ''}${chgPct.toFixed(2)}%</span>`
+                : '<span class="chg-neu">--</span>';
+
+            let locPos = 50;
+            if (moneyness === 'ITM') locPos = Math.max(5,  50 - Math.abs(mPct) * 3);
+            if (moneyness === 'OTM') locPos = Math.min(95, 50 + Math.abs(mPct) * 3);
+            const locClass = moneyness === 'ITM' ? 'loc-itm' : (moneyness === 'ATM' ? 'loc-atm' : 'loc-otm');
+            const locHtml = moneyness
+                ? `<span class="loc-bar"><span class="loc-track"><span class="loc-marker ${locClass}" style="left:${locPos}%"></span></span><span style="font-size:0.82em;color:#cbd5e0;margin-left:3px">${moneyness}</span></span>`
+                : '--';
+
+            const patches = {
+                'moneyness': locHtml,
+                'volume':    volume.toLocaleString(),
+                'oi':        oi.toLocaleString(),
+                'vol_oi':    `${volOi}x`,
+                'delta':     delta,
+                'iv':        iv > 0 ? `${iv.toFixed(1)}%` : '--',
+                'chg_pct':   chgStr,
+                'stk_vol':   stkVol > 0 ? `${(stkVol/1e6).toFixed(1)}M` : '--',
+            };
+
+            for (const [field, html] of Object.entries(patches)) {
+                const td = tr.querySelector(`td[data-field="${field}"]`);
+                if (td && td.innerHTML !== html) {
+                    td.innerHTML = html;
+                    td.classList.remove('live-flash');
+                    void td.offsetWidth; // force reflow
+                    td.classList.add('live-flash');
+                }
+            }
         }
 
         function createFlowRow(opt) {
@@ -855,9 +1289,14 @@
                 ? `<span class="badge-call">Call</span>`
                 : `<span class="badge-put">Put</span>`;
 
+            const optSym = opt.option_symbol || '';
+
             // score pill
             let scoreCls = score >= 70 ? 'score-high' : (score >= 40 ? 'score-med' : 'score-low');
             const scorePill = `<span class="score-pill ${scoreCls}">${score.toFixed(1)}</span>`;
+            // Sparkline (injected async — placeholder for now)
+            const sparkSvg = _makeSparklineSvg(_sparklineCache[optSym]);
+            const scoreCell = scorePill + sparkSvg;
 
             // Chg%
             let chgCls = chgPct > 0 ? 'chg-pos' : (chgPct < 0 ? 'chg-neg' : 'chg-neu');
@@ -897,30 +1336,29 @@
             // exp formatting — backend may use 'expiration' or 'expiration_date'
             const expStr = (opt.expiration_date || opt.expiration || '').replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$2/$3');
 
-            const optSym = opt.option_symbol || '';
-            return `<tr class="${rowClass}" onclick="showOptionDetails('${optSym}')">
+            return `<tr class="${rowClass}" data-sym="${optSym}" onclick="showOptionDetails('${optSym}')">
                 <td style="color:#718096;font-size:0.78em">${timeStr}</td>
                 <td><strong>${sym}</strong></td>
                 <td>${sideBadge}</td>
                 <td>$${strike}</td>
                 <td>${expStr}</td>
                 <td style="color:${dte <= 3 ? '#fc8181' : '#e2e8f0'}">${dte}d</td>
-                <td>${locHtml}</td>
-                <td>${volume.toLocaleString()}</td>
-                <td>${oi.toLocaleString()}</td>
-                <td>${volOi}x</td>
-                <td>${delta}</td>
+                <td data-field="moneyness">${locHtml}</td>
+                <td data-field="volume">${volume.toLocaleString()}</td>
+                <td data-field="oi">${oi.toLocaleString()}</td>
+                <td data-field="vol_oi">${volOi}x</td>
+                <td data-field="delta">${delta}</td>
                 <td>${sizzleHtml}</td>
                 <td>${vtHtml}</td>
-                <td>${iv > 0 ? iv.toFixed(1)+'%' : '--'}</td>
+                <td data-field="iv">${iv > 0 ? iv.toFixed(1)+'%' : '--'}</td>
                 <td>${ivrHtml}</td>
-                <td>${chgStr}</td>
-                <td>${stkVol > 0 ? (stkVol/1e6).toFixed(1)+'M' : '--'}</td>
+                <td data-field="chg_pct">${chgStr}</td>
+                <td data-field="stk_vol">${stkVol > 0 ? (stkVol/1e6).toFixed(1)+'M' : '--'}</td>
                 <td><span class="sector-tag">${sector}</span></td>
                 <td style="text-align:center">${betaHtml}</td>
                 <td style="text-align:center">${insiderHtml}</td>
                 <td style="text-align:center">${earningsHtml}</td>
-                <td>${scorePill}</td>
+                <td data-field="score">${scoreCell}</td>
             </tr>`;
         }
 
@@ -1246,6 +1684,44 @@
             const openInterest = Number(option.open_interest || 0);
             const score        = Number(option.whale_score || option.hybrid_score || 0);
             const expirationDate = option.expiration_date || 'N/A';
+
+            // Score breakdown signals
+            const ivRank   = Number(option.iv_rank          || 0);  // 0–100
+            const oiSpike  = Number(option.oi_spike_ratio   || 0);  // ratio
+            const volTrend = Number(option.vol_trend_ratio  || 0);  // ratio
+            const volOi    = Number(option.vol_oi_ratio     || (volume / Math.max(openInterest, 1)));
+            const chgPct   = Number(option.change_pct       || option.change_percentage || 0);
+            const spread   = premium > 0 ? (ask - bid) / premium * 100 : 0;
+
+            const scoreCol = score >= 80 ? '#38ef7d' : score >= 60 ? '#fbd38d' : '#fc8181';
+
+            // Helper: one breakdown row
+            const _sr = (label, val, display, maxVal, col) => {
+                const pct = Math.min(val / maxVal * 100, 100).toFixed(1);
+                return `<div class="sc-row">
+                    <span class="sc-lbl">${label}</span>
+                    <span class="sc-val">${display}</span>
+                    <div class="sc-track"><div class="sc-fill" style="width:${pct}%;background:${col}"></div></div>
+                </div>`;
+            };
+
+            const scoreBreakdown = `<div class="modal-section">
+                <h3 class="section-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+                    Score Breakdown
+                    <span class="sc-pill" style="background:${scoreCol}22;color:${scoreCol};border:1px solid ${scoreCol}55">${score.toFixed(1)}</span>
+                </h3>
+                <div class="sc-rows">
+                    ${_sr('Total',     score,              score.toFixed(1),           100, scoreCol)}
+                    <hr class="sc-divider">
+                    ${_sr('Vol / OI',  volOi,              volOi.toFixed(2) + '×',      20, '#63b3ed')}
+                    ${ivRank  > 0 ? _sr('IV Rank',   ivRank,    ivRank.toFixed(1)  + '%', 100, '#b794f4') : ''}
+                    ${oiSpike > 0 ? _sr('OI Spike',  oiSpike,   oiSpike.toFixed(2) + '×',  5, '#fc8181') : ''}
+                    ${volTrend> 0 ? _sr('Vol Trend', volTrend,  volTrend.toFixed(2)+ '×',  5, '#f6e05e') : ''}
+                    ${ chgPct !== 0 ? _sr('Chg%', Math.abs(chgPct), (chgPct >= 0 ? '+' : '') + chgPct.toFixed(2) + '%', 10, chgPct >= 0 ? '#68d391' : '#fc8181') : ''}
+                    ${_sr('Spread',   spread,             spread.toFixed(1)  + '%',    30, spread < 10 ? '#68d391' : spread < 20 ? '#f6e05e' : '#fc8181')}
+                </div>
+            </div>`;
+
             return `
                 <div class="modal-section"><h3 class="section-title">General</h3><div class="metrics-grid">
                     <div class="metric-card"><div class="value">${underlyingSymbol}</div><div class="label">Underlying</div></div>
@@ -1270,7 +1746,8 @@
                     <div class="metric-card"><div class="value">${moneyness}</div><div class="label">Moneyness</div></div>
                     <div class="metric-card"><div class="value">${score.toFixed(1)}</div><div class="label">Score</div></div>
                     <div class="metric-card"><div class="value">${((ask-bid)/Math.max(premium,.01)*100).toFixed(1)}%</div><div class="label">Spread%</div></div>
-                </div></div>`;
+                </div></div>
+                ${scoreBreakdown}`;
         }
 
         function closeModal() {

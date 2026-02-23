@@ -36,6 +36,7 @@ from api.filtering_endpoints import filtering_router
 from api.universe_endpoints import universe_router
 from api.earnings_endpoints import earnings_router
 from api.fmp_enrichment import fmp_enrichment_router
+from api.quotes_refresh import quotes_refresh_router
 
 # Persistence
 from services.persistence_service import persistence_service
@@ -84,6 +85,7 @@ app.include_router(filtering_router)
 app.include_router(universe_router)
 app.include_router(earnings_router)
 app.include_router(fmp_enrichment_router)
+app.include_router(quotes_refresh_router)
 
 # Appliquer la sécurité (API Key middleware + rate limiting)
 setup_security(app)
@@ -533,6 +535,23 @@ async def get_history_stats(underlying: str = None):
         return {"status": "ok", "data": stats}
     except Exception as e:
         return {"status": "error", "error": str(e)}
+
+
+@app.get("/api/history/sparklines")
+async def get_history_sparklines(symbols: str = ""):
+    """
+    Returns score history (last 7 scan days) for each option symbol.
+    Query param: ?symbols=SYM1,SYM2,...  (comma-separated OCC symbols)
+    Response: {"sparklines": {"SYM": [s_d1, s_d2, ...], ...}}
+    """
+    syms = [s.strip() for s in symbols.split(",") if s.strip()][:200]
+    if not syms:
+        return {"sparklines": {}}
+    try:
+        data = history_service.get_score_sparklines(syms)
+        return {"sparklines": data}
+    except Exception as exc:
+        return {"sparklines": {}, "error": str(exc)}
 
 
 # ==============================================================================

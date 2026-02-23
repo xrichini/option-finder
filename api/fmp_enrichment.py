@@ -46,6 +46,25 @@ _TTL_PROFILE = 24 * 3600  # sector/beta rarely change
 _TTL_METRICS = 24 * 3600  # TTM metrics, daily refresh enough
 _TTL_INSIDER = 4 * 3600  # insider filings trickle through the day
 
+# ── Daily quota tracker (FMP free tier = 250 req/day) ─────────────────────────
+_quota: dict = {"date": "", "calls": 0}
+_DAILY_LIMIT = 250
+
+
+def _bump_quota() -> None:
+    """Increment today's FMP request counter (auto-reset at midnight)."""
+    today = date.today().isoformat()
+    if _quota["date"] != today:
+        _quota["date"] = today
+        _quota["calls"] = 0
+    _quota["calls"] += 1
+    if _quota["calls"] % 10 == 0:
+        remaining = max(0, _DAILY_LIMIT - _quota["calls"])
+        logger.info(
+            f"📊 FMP quota: {_quota['calls']}/{_DAILY_LIMIT} used today ({remaining} remaining)"
+        )
+
+
 # ── FMP key helper ─────────────────────────────────────────────────────────────
 
 
@@ -123,6 +142,7 @@ async def _fetch_profile_one(sym: str) -> dict:
     """Single-symbol fallback for free-tier FMP."""
     url = f"{_FMP_STABLE}/profile"
     params = {"symbol": sym, "apikey": _api_key()}
+    _bump_quota()
     async with httpx.AsyncClient(timeout=10) as client:
         resp = await client.get(url, params=params)
     if resp.status_code in (401, 429):
@@ -196,7 +216,7 @@ def _parse_metrics(raw: dict) -> dict:
 async def _fetch_metrics_one(sym: str) -> dict:
     url = f"{_FMP_STABLE}/ratios-ttm"
     params = {"symbol": sym, "apikey": _api_key()}
-
+    _bump_quota()
     async with httpx.AsyncClient(timeout=10) as client:
         resp = await client.get(url, params=params)
 
@@ -305,7 +325,7 @@ def _parse_insider(raw_list: list[dict]) -> dict:
 async def _fetch_insider_one(sym: str) -> dict:
     url = f"{_FMP_STABLE}/insider-trading/search"
     params = {"symbol": sym, "limit": 20, "apikey": _api_key()}
-
+    _bump_quota()
     async with httpx.AsyncClient(timeout=10) as client:
         resp = await client.get(url, params=params)
 
@@ -411,8 +431,16 @@ async def endpoint_cache_status():
         live = sum(1 for v in cache.values() if (now - v["ts"]) < ttl)
         return {"total": len(cache), "live": live, "stale": len(cache) - live}
 
+    remaining = max(0, _DAILY_LIMIT - _quota["calls"])
     return {
         "profiles": _summary(_profile_cache, _TTL_PROFILE),
         "metrics": _summary(_metrics_cache, _TTL_METRICS),
         "insider": _summary(_insider_cache, _TTL_INSIDER),
+        "quota": {
+            "date": _quota["date"] or date.today().isoformat(),
+            "calls_today": _quota["calls"],
+            "daily_limit": _DAILY_LIMIT,
+            "remaining": remaining,
+            "pct_used": round(_quota["calls"] / _DAILY_LIMIT * 100, 1),
+        },
     }

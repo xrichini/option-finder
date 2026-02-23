@@ -411,6 +411,47 @@ class HistoryService:
 
         return opportunities
 
+    def get_score_sparklines(self, option_symbols: list, window_days: int = 7) -> dict:
+        """
+        Returns {option_symbol: [score_d1, ..., score_latest]} for each symbol.
+        Ordered oldest → newest. Days with no data are skipped (no nulls).
+        Requires ≥ 2 data points to be useful — single-point symbols are
+        included so the caller can decide to skip them.
+        """
+        if not option_symbols or not os.path.exists(self.db_path):
+            return {}
+
+        cutoff = (datetime.now() - timedelta(days=window_days)).strftime("%Y-%m-%d")
+        placeholders = ",".join("?" * len(option_symbols))
+
+        con = self._open()
+        if con is None:
+            return {}
+        try:
+            rows = con.execute(
+                f"""
+                SELECT option_symbol, scan_date, whale_score
+                FROM option_history
+                WHERE option_symbol IN ({placeholders})
+                  AND scan_date >= ?
+                  AND whale_score > 0
+                ORDER BY option_symbol, scan_date ASC
+                """,
+                option_symbols + [cutoff],
+            ).fetchall()
+
+            result: dict = {}
+            for sym, _date, score in rows:
+                if sym not in result:
+                    result[sym] = []
+                result[sym].append(round(float(score), 1))
+            return result
+        except Exception as exc:
+            logger.debug(f"get_score_sparklines: {exc}")
+            return {}
+        finally:
+            con.close()
+
     # ------------------------------------------------------------------
     # Stats / debug
     # ------------------------------------------------------------------

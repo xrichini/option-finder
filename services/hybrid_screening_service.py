@@ -113,6 +113,26 @@ class HybridScreeningService(ScreeningService):
             )
             logger.info(f"✅ Prix récupérés pour {len(underlying_prices)} symboles")
 
+            # ── Quota guard: enrich FMP only for top-N unique symbols ──────────
+            # (FMP free tier = 250 req/day; profile+metrics = 2 calls/symbol)
+            _FMP_ENRICH_LIMIT = 50
+            _sorted_for_fmp = sorted(
+                base_opportunities, key=lambda o: o.whale_score, reverse=True
+            )
+            fmp_symbols: list[str] = []
+            _seen_fmp: set[str] = set()
+            for _o in _sorted_for_fmp:
+                _sym = _o.underlying_symbol.upper()
+                if _sym not in _seen_fmp:
+                    _seen_fmp.add(_sym)
+                    fmp_symbols.append(_sym)
+                if len(fmp_symbols) >= _FMP_ENRICH_LIMIT:
+                    break
+            logger.info(
+                f"💰 FMP quota guard: enriching {len(fmp_symbols)}/{len(underlying_symbols)} "
+                f"unique symbols (top-{_FMP_ENRICH_LIMIT} by whale_score)"
+            )
+
             # Pre-fetch FMP data concurrently (non-bloquant — dict vide si indisponible)
             (
                 earnings_map,
@@ -121,9 +141,9 @@ class HybridScreeningService(ScreeningService):
                 insider_map,
             ) = await asyncio.gather(
                 get_earnings_map(days=7),
-                get_profiles(underlying_symbols),
-                get_key_metrics(underlying_symbols),
-                get_insider_activity(underlying_symbols),
+                get_profiles(fmp_symbols),
+                get_key_metrics(fmp_symbols),
+                get_insider_activity(fmp_symbols),
             )
             logger.info(
                 f"📅 Earnings: {len(earnings_map)} | "
@@ -208,6 +228,7 @@ class HybridScreeningService(ScreeningService):
                         "polygon_available": hybrid_metrics.polygon_available,
                         # Métadonnées d'analyse
                         "analysis_type": "hybrid",
+                        "timestamp": datetime.now().isoformat(),
                         "analysis_timestamp": datetime.now().isoformat(),
                         "tradier_enabled": True,
                         "polygon_enabled": self.hybrid_service.polygon_enabled,
