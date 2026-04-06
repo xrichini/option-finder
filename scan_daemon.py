@@ -29,10 +29,12 @@ import sys
 from datetime import datetime, time as dtime
 from pathlib import Path
 
+import pandas as pd
 from dotenv import load_dotenv
+
 load_dotenv()
 
-# ── Logging ───────────────────────────────────────────────────────────────────
+# ── Logging ─────────────────────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
@@ -44,15 +46,33 @@ logging.basicConfig(
 )
 logger = logging.getLogger("scan_daemon")
 
-# ── Constants ─────────────────────────────────────────────────────────────────
+# ── Constants ───────────────────────────────────────────────────────────────
 try:
-    from zoneinfo import ZoneInfo          # Python 3.9+
+    from zoneinfo import ZoneInfo  # Python 3.9+
+
     MARKET_TZ = ZoneInfo("America/New_York")
 except ImportError:
-    from dateutil.tz import gettz          # fallback: pip install python-dateutil
+    from dateutil.tz import gettz  # fallback: pip install python-dateutil
+
     MARKET_TZ = gettz("America/New_York")
 
-MARKET_OPEN  = dtime(9, 30)
+# Calendrier NYSE via exchange_calendars (gère jours fériés US, early closes, DST)
+try:
+    from exchange_calendars import get_calendar as _get_calendar
+
+    _NYSE = _get_calendar("XNYS")
+    _USE_EXCHANGE_CAL = True
+    logger_init = logging.getLogger("scan_daemon")
+    logger_init.info(
+        "✅ exchange_calendars chargé — vérification des jours fériés activée"
+    )
+except Exception as _exc:
+    _USE_EXCHANGE_CAL = False
+    logging.getLogger("scan_daemon").warning(
+        f"⚠️  exchange_calendars indisponible ({_exc}), fallback simple (pas de jours fériés)"
+    )
+
+MARKET_OPEN = dtime(9, 30)
 MARKET_CLOSE = dtime(16, 0)
 
 DEFAULT_UNIVERSE = "nasdaq100"
@@ -60,18 +80,36 @@ DEFAULT_INTERVAL = 15  # minutes
 
 OUTPUT_PATH = Path("data/latest_scan.json")
 
-# ── Market hours ──────────────────────────────────────────────────────────────
+# ── Market hours ────────────────────────────────────────────────────────────
+
 
 def is_market_open() -> bool:
-    """True si l'heure actuelle ET est dans les heures de marché (lun-ven)."""
+    """
+    True si le marché NYSE/NASDAQ est actuellement ouvert.
+
+    Utilise exchange_calendars (jours fériés US, early closes, DST inclus).
+    Fallback sur vérification simple lun-ven 9h30-16h00 ET si la librairie
+    est indisponible.
+    """
+    if _USE_EXCHANGE_CAL:
+        try:
+            now_utc = pd.Timestamp.now(tz="UTC")
+            return bool(_NYSE.is_open_on_minute(now_utc))
+        except Exception as exc:
+            logging.getLogger("scan_daemon").warning(
+                f"⚠️  exchange_calendars erreur ({exc}), fallback simple"
+            )
+
+    # ── Fallback simple ──────────────────────────────────────────────────────
     now_et = datetime.now(MARKET_TZ)
-    if now_et.weekday() >= 5:   # samedi=5, dimanche=6
+    if now_et.weekday() >= 5:  # samedi=5, dimanche=6
         return False
     t = now_et.time()
     return MARKET_OPEN <= t <= MARKET_CLOSE
 
 
-# ── Universe resolution ───────────────────────────────────────────────────────
+# ── Universe resolution ─────────────────────────────────────────────────────
+
 
 def fetch_symbols(universe: str) -> list:
     """
@@ -79,12 +117,14 @@ def fetch_symbols(universe: str) -> list:
     Utilise la logique existante (FMP → Wikipedia fallback, cache 24h).
     """
     from api.universe_endpoints import _fetch_universe
+
     symbols, source = _fetch_universe(universe)
     logger.info(f"📋 Universe {universe}: {len(symbols)} symboles (source: {source})")
     return symbols
 
 
-# ── Async scan core ───────────────────────────────────────────────────────────
+# ── Async scan core ─────────────────────────────────────────────────────────
+
 
 async def run_scan_async(symbols: list, params: dict) -> list:
     """
@@ -92,6 +132,7 @@ async def run_scan_async(symbols: list, params: dict) -> list:
     Instancie un nouveau HybridScreeningService (thread-safe, event-loop vierge).
     """
     from services.hybrid_screening_service import HybridScreeningService
+
     service = HybridScreeningService()
 
     async def _progress(current: int, total: int, symbol: str, details: str):
@@ -119,7 +160,8 @@ async def run_scan_async(symbols: list, params: dict) -> list:
     return opportunities
 
 
-# ── Result persistence ────────────────────────────────────────────────────────
+# ── Result persistence ──────────────────────────────────────────────────────
+
 
 def write_results(opportunities: list, universe: str, symbols: list):
     """
@@ -144,14 +186,15 @@ def write_results(opportunities: list, universe: str, symbols: list):
     tmp.replace(OUTPUT_PATH)
 
     calls = sum(1 for o in opportunities if o.get("option_type") == "CALL")
-    puts  = len(opportunities) - calls
+    puts = len(opportunities) - calls
     logger.info(
         f"💾 Résultats sauvegardés → {OUTPUT_PATH}  "
         f"({len(opportunities)} total — {calls} CALLS, {puts} PUTS)"
     )
 
 
-# ── Full scan cycle ───────────────────────────────────────────────────────────
+# ── Full scan cycle ─────────────────────────────────────────────────────────
+
 
 def do_scan(universe: str, params: dict):
     """
@@ -181,7 +224,8 @@ def do_scan(universe: str, params: dict):
         logger.error("❌ Erreur pendant le scan", exc_info=True)
 
 
-# ── Scheduler job ─────────────────────────────────────────────────────────────
+# ── Scheduler job ───────────────────────────────────────────────────────────
+
 
 def scheduled_job(universe: str, params: dict, force: bool = False):
     """
@@ -195,7 +239,8 @@ def scheduled_job(universe: str, params: dict, force: bool = False):
     do_scan(universe, params)
 
 
-# ── CLI entry point ───────────────────────────────────────────────────────────
+# ── CLI entry point ─────────────────────────────────────────────────────────
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -226,17 +271,19 @@ def main():
         help="Scanner même hors heures de marché (test/debug)",
     )
     # Scan parameters
-    parser.add_argument("--max-dte",    type=int,   default=7,    help="DTE maximum")
-    parser.add_argument("--min-volume", type=int,   default=500,  help="Volume minimum")
-    parser.add_argument("--min-oi",     type=int,   default=100,  help="Open Interest minimum")
-    parser.add_argument("--min-score",  type=float, default=30.0, help="Whale score minimum")
+    parser.add_argument("--max-dte", type=int, default=7, help="DTE maximum")
+    parser.add_argument("--min-volume", type=int, default=500, help="Volume minimum")
+    parser.add_argument("--min-oi", type=int, default=100, help="Open Interest minimum")
+    parser.add_argument(
+        "--min-score", type=float, default=30.0, help="Whale score minimum"
+    )
 
     args = parser.parse_args()
 
     params = {
-        "max_dte":        args.max_dte,
-        "min_volume":     args.min_volume,
-        "min_oi":         args.min_oi,
+        "max_dte": args.max_dte,
+        "min_volume": args.min_volume,
+        "min_oi": args.min_oi,
         "min_whale_score": args.min_score,
     }
 
@@ -246,13 +293,11 @@ def main():
     )
     logger.info(f"   Params: {params}")
 
-    # ── Mode one-shot ──────────────────────────────────────────────────────────
+    # ── Mode one-shot ────────────────────────────────────────────────────────
     if args.once:
         if not args.force and not is_market_open():
-            logger.warning(
-                "⚠️  Marché fermé. Utilise --force pour scanner quand même."
-            )
-            # On scanne quand même en mode --once pour ne pas bloquer les tests
+            logger.info("⏸️  Marché fermé — aucun scan lancé (utilise --force pour outrepasser).")
+            sys.exit(0)
         do_scan(args.universe, params)
         return
 
@@ -260,9 +305,7 @@ def main():
     try:
         from apscheduler.schedulers.blocking import BlockingScheduler
     except ImportError:
-        logger.error(
-            "❌ APScheduler introuvable. Installe-le: pip install apscheduler"
-        )
+        logger.error("❌ APScheduler introuvable. Installe-le: pip install apscheduler")
         sys.exit(1)
 
     scheduler = BlockingScheduler(timezone=MARKET_TZ)
@@ -273,8 +316,8 @@ def main():
         id="scan_job",
         kwargs={
             "universe": args.universe,
-            "params":   params,
-            "force":    args.force,
+            "params": params,
+            "force": args.force,
         },
         next_run_time=datetime.now(MARKET_TZ),  # premier scan immédiat au démarrage
     )
