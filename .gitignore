@@ -211,3 +211,4 @@ __marimo__/
 
 # Streamlit secrets
 .streamlit/secrets.toml
+src/

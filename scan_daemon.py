@@ -32,6 +32,9 @@ from pathlib import Path
 import pandas as pd
 from dotenv import load_dotenv
 
+# ── Local imports ───────────────────────────────────────────────────────────
+from api.finviz_enrichment import enrich_opportunities_with_insider_data
+
 load_dotenv()
 
 # ── Logging ─────────────────────────────────────────────────────────────────
@@ -271,7 +274,7 @@ def write_results(opportunities: list, universe: str, symbols: list):
 
 def do_scan(universe: str, params: dict):
     """
-    Cycle complet: résolution des symboles + scan + sauvegarde.
+    Cycle complet: résolution des symboles + scan + enrichissement + sauvegarde.
     Bloquant (utilise asyncio.run pour exécuter la partie async).
     """
     start = datetime.now()
@@ -285,6 +288,11 @@ def do_scan(universe: str, params: dict):
             return
 
         opportunities = asyncio.run(run_scan_async(symbols, params))
+
+        # Enrich with insider trading data
+        logger.info("🔄 Enrichissement avec données insider...")
+        opportunities = enrich_opportunities_with_insider_data(opportunities)
+
         write_results(opportunities, universe, symbols)
 
         elapsed = (datetime.now() - start).total_seconds()
