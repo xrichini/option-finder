@@ -2,8 +2,8 @@
 
 ## Contexte
 
-Scanner d'options (unusual flow) actuellement hébergé sur une VM Linux.  
-Objectif : supprimer le serveur, pousser sur GitHub, scanner via GHA cron, lire l'UI depuis n'importe quel device via GitHub Pages.
+Scanner d'options (unusual flow) — `option-finder` — actuellement hébergé sur une VM Linux.  
+Objectif : supprimer le serveur, pousser sur GitHub (repo public), scanner via GHA cron, lire l'UI depuis n'importe quel device via GitHub Pages.
 
 ## Décisions
 
@@ -28,7 +28,7 @@ GitHub Pages (branch gh-pages, auto-déployée)
   └── data/latest_scan.json       ← copié depuis main
 
 Browser (smartphone / autre PC / tablette)
-  └── https://{user}.github.io/squeeze-finder/
+  └── https://xrichini.github.io/option-finder/
         └── fetch('./data/latest_scan.json')
               └── filtrage client-side + affichage
 ```
@@ -110,7 +110,7 @@ Les deux workflows se coordonnent : `scan.yml` push `main` → déclenche `deplo
 
 1. Repository → **Settings** → **Pages**
 2. Source : **Deploy from a branch** → branch `gh-pages` → dossier `/`
-3. URL finale : `https://{user}.github.io/squeeze-finder/`
+3. URL finale : `https://xrichini.github.io/option-finder/`
 
 ---
 
