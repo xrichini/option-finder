@@ -37,16 +37,7 @@ jobs:
         with:
           fetch-depth: 0  # historique complet pour pouvoir pousser
 
-      - name: Setup Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: "pip"
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-
-      - name: Run scan
+      - name: Build & Run scan with Docker
         env:
           TRADIER_API_KEY_PRODUCTION: ${{ secrets.TRADIER_API_KEY_PRODUCTION }}
           FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
@@ -57,8 +48,20 @@ jobs:
           if [ "${{ github.event.inputs.force }}" = "true" ]; then
             FORCE_FLAG="--force"
           fi
-          echo "📡 Scanning universe: $UNIVERSE (force=${{ github.event.inputs.force || 'false' }})"
-          python scan_daemon.py --once --universe "$UNIVERSE" $FORCE_FLAG
+          echo "📡 Building Docker image & scanning universe: $UNIVERSE (force=${{ github.event.inputs.force || 'false' }})"
+          
+          # Build Docker image
+          docker build -t option-finder:latest .
+          
+          # Run scan in Docker container
+          docker run \
+            --rm \
+            -v "$(pwd)/data:/app/data" \
+            -e TRADIER_API_KEY_PRODUCTION="$TRADIER_API_KEY_PRODUCTION" \
+            -e FMP_API_KEY="$FMP_API_KEY" \
+            -e POLYGON_API_KEY="$POLYGON_API_KEY" \
+            option-finder:latest \
+            python scan_daemon.py --once --universe "$UNIVERSE" $FORCE_FLAG
 
       - name: Commit scan results
         run: |
