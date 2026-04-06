@@ -351,10 +351,9 @@
         <div class="tb-sep"></div>
         <div class="tb-controls">
             <select id="tbUniverse" class="tb-select" onchange="updateUniverseUI()">
+                <option value="nasdaq100" selected>Nasdaq 100</option>
                 <option value="sp500">S&amp;P 500</option>
-                <option value="nasdaq100">Nasdaq 100</option>
                 <option value="dow30">DOW 30</option>
-                <option value="short_interest">Short Interest</option>
                 <option value="manual">Custom</option>
             </select>
             <select id="tbSide" class="tb-select">
@@ -369,10 +368,9 @@
                 <option value="30">DTE ≤ 30</option>
                 <option value="45">DTE ≤ 45</option>
             </select>
-            <button id="btnScan" class="tb-btn tb-btn-scan" onclick="scanOptions()">&#9654; SCAN</button>
-            <button id="btnFilters" class="tb-btn tb-btn-filter" onclick="toggleFilterPanel()" title="Option chain filters — applied during scan">&#9881; Option filters</button>
-            <button id="btnRefresh" class="tb-btn tb-btn-refresh" onclick="manualRefresh(this)" title="Fetch fresh quotes now">&#8635;</button>
-            <button id="btnLive" class="tb-btn tb-btn-live" onclick="_toggleLive()" title="Toggle live quotes refresh every 30s"><span class="live-btn-dot"></span>Live</button>
+            <button id="btnScan" class="tb-btn tb-btn-scan" onclick="loadLatestScan()">&#8595; Load Latest</button>
+            <button id="btnFilters" class="tb-btn tb-btn-filter" onclick="toggleFilterPanel()" title="Show/hide option filters">&#9881; Filters</button>
+            <button id="btnRefresh" class="tb-btn tb-btn-refresh" onclick="loadLatestScan()" title="Reload latest scan">&#8635;</button>
         </div>
         <div class="tb-status">
             <span id="statusDot" class="status-dot"></span>
@@ -472,49 +470,73 @@
         let filteredOptions = [];
         let isLoading = false;
         let tickerSearch = '';          // live ticker text filter
-        let _progressPoll = null;
+        let _sparklineCache = {};
 
-        function _startProgressPolling() {
-            if (_progressPoll) clearInterval(_progressPoll);
-            // Reset bar
-            document.getElementById('progressBarFill').style.width = '0%';
-            document.getElementById('progressText').textContent = 'Starting…';
-            document.getElementById('progressPct').textContent = '0%';
-            document.getElementById('progressSymbol').textContent = '';
-            _progressPoll = setInterval(async () => {
-                try {
-                    const r = await fetch(API_BASE + '/api/hybrid/scan-progress');
-                    const p = await r.json();
-                    if (p.total > 0) {
-                        document.getElementById('progressBarFill').style.width = p.percent + '%';
-                        const sym = p.symbol && !['INIT','PREP','idle','N/A',''].includes(p.symbol)
-                            ? p.symbol : '...';
-                        document.getElementById('progressText').textContent =
-                            p.current + ' / ' + p.total + '  \u25b6  ' + sym;
-                        document.getElementById('progressPct').textContent = p.percent + '%';
-                        document.getElementById('progressSymbol').textContent = '';
-                        setStatus('scanning', sym + '  ' + p.current + '/' + p.total);
-                    }
-                } catch(e) {}
-            }, 300);
-        }
+        // ──── Load pre-computed scan from GitHub Pages ────
+        async function loadLatestScan() {
+            const btn = document.getElementById('btnScan');
+            if (btn) btn.disabled = true;
+            setStatus('scanning', 'Loading…');
+            try {
+                const r = await fetch('./data/latest_scan.json?_=' + Date.now());
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                const data = await r.json();
 
-        function _stopProgressPolling() {
-            if (_progressPoll) { clearInterval(_progressPoll); _progressPoll = null; }
-            document.getElementById('progressBarFill').style.width = '0%';
-            document.getElementById('progressText').textContent = 'Starting…';
-            document.getElementById('progressPct').textContent = '0%';
-            document.getElementById('progressSymbol').textContent = '';
+                if (data._placeholder) {
+                    showError('No scan data yet — GitHub Actions will populate this file during market hours.');
+                    setStatus('idle', 'No data');
+                    return;
+                }
+
+                const ts       = data.timestamp ? new Date(data.timestamp) : null;
+                const ageMin   = ts ? Math.round((Date.now() - ts) / 60000) : null;
+                const ageLabel = ageMin === null ? ''
+                               : ageMin < 60    ? (' · ' + ageMin + 'min ago')
+                                                 : (' · ' + Math.round(ageMin / 60) + 'h ago');
+                const staleWarn = ageMin !== null && ageMin > 120;
+
+                let opps = data.opportunities || [];
+
+                // Client-side side filter
+                const side = document.getElementById('tbSide').value;
+                if (side !== 'both') {
+                    opps = opps.filter(o => (o.option_type || '').toLowerCase() === side);
+                }
+
+                currentOptions  = opps;
+                filteredOptions = [...currentOptions];
+                if (tickerSearch) filteredOptions = filteredOptions.filter(
+                    o => (o.underlying_symbol || '').toUpperCase().startsWith(tickerSearch));
+
+                document.getElementById('scanMeta').textContent =
+                    currentOptions.length + ' results · ' +
+                    (data.universe || 'nasdaq100') + ageLabel +
+                    (staleWarn ? ' ⚠️ stale' : '');
+
+                renderOptions();
+                toggleFilterButtons(true);
+                updateFilterBadges();
+                setStatus(staleWarn ? 'error' : 'idle', staleWarn ? 'Stale data' : 'Ready');
+
+                _persistResults(data.symbols_count || opps.length, 0);
+            } catch (err) {
+                console.error('loadLatestScan:', err);
+                if (!_restoreResults()) {
+                    showError('Cannot load scan data: ' + err.message);
+                    setStatus('error', 'Error');
+                }
+            } finally {
+                if (btn) btn.disabled = false;
+            }
         }
 
         // ──── Init ────
         document.addEventListener('DOMContentLoaded', () => {
             setupFilterButtons();
-            loadConfigFromAPI();
             toggleFilterButtons(false);
             updateUniverseUI();
             document.getElementById('tbUniverse').addEventListener('change', updateUniverseUI);
-            _restoreResults();
+            loadLatestScan();
         });
 
         const _LS_KEY = 'flow_scan_results';
@@ -593,19 +615,6 @@
             }
         }
 
-        async function loadConfigFromAPI() {
-            try {
-                const r = await fetch('/api/config');
-                if (!r.ok) return;
-                const cfg = await r.json();
-                const p   = cfg.screening_parameters || {};
-                if (p.min_volume_threshold !== undefined) document.getElementById('fpMinVol').value = p.min_volume_threshold;
-                if (p.min_whale_score !== undefined)      document.getElementById('fpScore').value  = p.min_whale_score;
-                if (p.min_iv !== undefined)               document.getElementById('fpMinIv').value  = p.min_iv;
-                if (p.max_dte !== undefined)              document.getElementById('tbDte').value    = p.max_dte;
-            } catch (e) { console.warn('loadConfig:', e); }
-        }
-
         // Default filter values per universe
         const UNIVERSE_DEFAULTS = {
             sp500:          { minVol: 500,  minOi: 100, score: 30, iv: 0  },
@@ -640,130 +649,6 @@
             const btn = document.getElementById('btnFilters');
             fp.classList.toggle('collapsed');
             btn.classList.toggle('active');
-        }
-
-        // ──── SCAN ────
-        async function scanOptions() {
-            if (isLoading) return;
-            try {
-                isLoading = true;
-                document.getElementById('btnScan').disabled = true;
-                clearResults();
-                showLoading(true);
-                _startProgressPolling();
-                setStatus('scanning', 'Scanning…');
-
-                const universe = document.getElementById('tbUniverse').value;
-                const side     = document.getElementById('tbSide').value;
-                const maxDte   = parseInt(document.getElementById('tbDte').value)    || 7;
-                const minVol   = parseInt(document.getElementById('fpMinVol').value)  || 0;
-                const minOi    = parseInt(document.getElementById('fpMinOi').value)   || 0;
-                const minScore = parseFloat(document.getElementById('fpScore').value) || 0;
-                const minIv    = parseFloat(document.getElementById('fpMinIv').value) || 0;
-                const siMin    = parseFloat(document.getElementById('fpSiMin').value) || 20;
-                const t0 = Date.now();
-
-                // ── 1. Resolve symbols ──
-                let symbols = [];
-                if (universe === 'manual') {
-                    const raw = document.getElementById('fpCustomTickers').value;
-                    symbols = raw.split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
-                    if (!symbols.length) { showError('No tickers entered.'); return; }
-                } else if (['sp500', 'nasdaq100', 'dow30'].includes(universe)) {
-                    const label = { sp500: 'S&P 500', nasdaq100: 'Nasdaq 100', dow30: 'DOW 30' }[universe];
-                    setStatus('scanning', 'Fetching ' + label + ' tickers…');
-                    const r = await fetch(API_BASE + '/api/universe/' + universe);
-                    if (!r.ok) throw new Error('Universe fetch failed: ' + r.status);
-                    const d = await r.json();
-                    symbols = d.symbols || [];
-                    if (!symbols.length) throw new Error('No tickers returned for ' + universe);
-                } else if (universe === 'short_interest') {
-                    setStatus('scanning', 'Fetching short interest tickers…');
-                    const params = new URLSearchParams({
-                        exchange: 'all',
-                        min_short_interest: siMin,
-                        min_market_cap: 100000000,
-                        min_avg_volume: 500000,
-                        enable_prefiltering: 'true'
-                    });
-                    const r = await fetch(API_BASE + '/api/short-interest/symbols?' + params);
-                    if (!r.ok) throw new Error('Short interest fetch failed: ' + r.status);
-                    const d = await r.json();
-                    symbols = d.symbols || [];
-                    if (!symbols.length) throw new Error('No short-interest tickers found');
-                }
-
-                setStatus('scanning', 'Scanning ' + symbols.length + ' tickers…');
-
-                // ── 2. Start background scan (returns immediately) ──
-                const body = {
-                    symbols:         symbols,
-                    min_volume:      minVol,
-                    min_oi:          minOi,
-                    min_iv:          minIv,
-                    max_dte:         maxDte,
-                    min_whale_score: minScore,
-                };
-                const startResp = await fetch(API_BASE + '/api/hybrid/scan-all', {
-                    method:  'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body:    JSON.stringify(body)
-                });
-                if (!startResp.ok) throw new Error('Scan start HTTP ' + startResp.status);
-
-                // ── 3. Poll until scan complete ──
-                while (true) {
-                    await new Promise(res => setTimeout(res, 400));
-                    try {
-                        const p = await fetch(API_BASE + '/api/hybrid/scan-progress').then(r => r.json());
-                        if (p.complete || (!p.active && p.phase !== 'init')) break;
-                    } catch(_) {}
-                }
-
-                // ── 4. Fetch result ──
-                const resultResp = await fetch(API_BASE + '/api/hybrid/scan-result');
-                if (!resultResp.ok) throw new Error('Result fetch HTTP ' + resultResp.status);
-                const scanResult = await resultResp.json();
-
-                if (!scanResult.ready) {
-                    throw new Error(scanResult.error || 'Scan échoué (aucun résultat)');
-                }
-                const data = scanResult.data;
-
-                let opps = data.opportunities || [];
-
-                // ── 5. Client-side side filter ──
-                if (side !== 'both') {
-                    opps = opps.filter(o => (o.option_type || '').toLowerCase() === side);
-                }
-
-                currentOptions  = opps;
-                filteredOptions = [...currentOptions];
-                if (tickerSearch) filteredOptions = filteredOptions.filter(
-                    o => (o.underlying_symbol || '').toUpperCase().startsWith(tickerSearch));
-
-                const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
-                document.getElementById('scanMeta').textContent =
-                    currentOptions.length + ' results · ' + elapsed + 's · ' + symbols.length + ' tickers';
-
-                renderOptions();
-                _startLiveRefresh();
-                _persistResults(symbols.length, elapsed);
-                _loadSparklines();
-                toggleFilterButtons(true);
-                updateFilterBadges();
-                setStatus('idle', 'Done');
-
-            } catch (err) {
-                console.error('Scan error:', err);
-                showError('Scan error: ' + err.message);
-                setStatus('error', 'Error');
-            } finally {
-                isLoading = false;
-                document.getElementById('btnScan').disabled = false;
-                _stopProgressPolling();
-                showLoading(false);
-            }
         }
 
         // ──── CLIENT-SIDE FILTER (no new scan) ────
@@ -843,7 +728,6 @@
         }
 
         function clearResults() {
-            _stopLiveRefresh();
             _sparklineCache = {};
             localStorage.removeItem(_LS_KEY);
             document.getElementById('optionsGrid').innerHTML = '';
@@ -973,182 +857,14 @@
             return v === undefined || v === null ? 0 : v;
         }
 
-        async function manualRefresh(btn) {
-            if (!currentOptions.length) {
-                // Try to restore from localStorage first
-                btn.classList.add('spinning');
-                btn.disabled = true;
-                try { _restoreResults(); } finally {
-                    btn.classList.remove('spinning');
-                    btn.disabled = false;
-                }
-                return;
-            }
-            btn.classList.add('spinning');
-            btn.disabled = true;
-            try {
-                await _doLiveRefresh();
-                applyClientFilters();
-            } finally {
-                btn.classList.remove('spinning');
-                btn.disabled = false;
-            }
+        async function manualRefresh() {
+            await loadLatestScan();
         }
 
         function tableSort(key) {
             if (tableSortKey === key) tableSortAsc = !tableSortAsc;
             else { tableSortKey = key; tableSortAsc = false; }
             renderOptions();
-        }
-
-        // ── Live Quotes Refresh (30s) ─────────────────────────────────────────
-        // Only volatile fields are refreshed: volume, OI, delta, IV, chg%, stk_vol,
-        // moneyness. Static fields (sector, beta, insider, IVR, V5d, score) are NEVER
-        // re-fetched here — they don't change intraday.
-        let _liveRefreshTimer = null;
-        let _sparklineCache = {};  // {option_symbol: [score_d1,...,score_today]}
-        const _LIVE_REFRESH_MS = 30_000;
-
-        let _liveEnabled = true;  // default ON, user can toggle
-
-        function _toggleLive() {
-            if (_liveRefreshTimer) {
-                _liveEnabled = false;
-                _stopLiveRefresh();
-            } else {
-                _liveEnabled = true;
-                if (currentOptions.length) _startLiveRefresh();
-            }
-        }
-
-        function _startLiveRefresh() {
-            _stopLiveRefresh();
-            if (!_liveEnabled) return;
-            _liveRefreshTimer = setInterval(_doLiveRefresh, _LIVE_REFRESH_MS);
-            // Visual: button active + status dot live
-            const btn = document.getElementById('btnLive');
-            if (btn) btn.classList.add('active');
-            const el = document.getElementById('liveIndicator');
-            if (el) el.style.display = 'inline-flex';
-            setStatus('live', 'Live');
-        }
-
-        function _stopLiveRefresh() {
-            if (_liveRefreshTimer) { clearInterval(_liveRefreshTimer); _liveRefreshTimer = null; }
-            const btn = document.getElementById('btnLive');
-            if (btn) btn.classList.remove('active');
-            const el = document.getElementById('liveIndicator');
-            if (el) el.style.display = 'none';
-            // Restore status dot only if not scanning
-            if (!isLoading) setStatus('idle', 'Done');
-        }
-
-        async function _doLiveRefresh() {
-            if (!currentOptions.length) return;
-
-            const optSyms = [...new Set(currentOptions.map(o => o.option_symbol).filter(Boolean))];
-            const undSyms = [...new Set(
-                currentOptions.map(o => (o.underlying_symbol || o.underlying || '')).filter(Boolean)
-            )];
-            if (!optSyms.length) return;
-
-            try {
-                const resp = await fetch('/api/quotes/refresh', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({option_symbols: optSyms, underlying_symbols: undSyms})
-                });
-                if (!resp.ok) return;
-                const data = await resp.json();
-
-                const optQ = data.options     || {};
-                const undQ = data.underlyings || {};
-
-                for (const opt of currentOptions) {
-                    const sym    = (opt.option_symbol || '').toUpperCase();
-                    const undSym = (opt.underlying_symbol || opt.underlying || '').toUpperCase();
-                    const q  = sym    ? optQ[sym]    : null;
-                    const uq = undSym ? undQ[undSym] : null;
-                    if (!q && !uq) continue;
-
-                    if (q) {
-                        if (q.volume            != null) opt.volume             = q.volume;
-                        if (q.open_interest     != null) opt.open_interest      = q.open_interest;
-                        if (q.delta             != null) opt.delta              = q.delta;
-                        if (q.implied_volatility!= null) opt.implied_volatility = q.implied_volatility;
-                        if (q.change_pct        != null) opt.change_pct         = q.change_pct;
-                        const vol = opt.volume || 0;
-                        const oi  = opt.open_interest || 0;
-                        opt.vol_oi_ratio = oi > 0 ? parseFloat((vol / oi).toFixed(2)) : 0;
-                    }
-                    if (uq) {
-                        if (uq.stock_volume != null) opt.stock_volume = uq.stock_volume;
-                        if (uq.last && opt.strike) {
-                            const pct      = (opt.strike - uq.last) / uq.last * 100;
-                            opt.moneyness_pct = parseFloat(pct.toFixed(2));
-                            const isCall   = (opt.option_type || '').toLowerCase() === 'call';
-                            opt.moneyness  = Math.abs(pct) < 2 ? 'ATM'
-                                           : (isCall ? (pct < 0 ? 'ITM' : 'OTM')
-                                                     : (pct > 0 ? 'ITM' : 'OTM'));
-                        }
-                    }
-                    _patchLiveRow(opt, !!q, !!uq);
-                }
-
-                // Update last-refreshed timestamp
-                const tsEl = document.getElementById('liveRefreshedAt');
-                if (tsEl) {
-                    const now = new Date();
-                    tsEl.textContent = now.toLocaleTimeString('en-US',
-                        {hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false});
-                }
-            } catch(e) {
-                console.warn('Live refresh error:', e);
-            }
-        }
-
-        // ── Sparklines ──────────────────────────────────────────────────
-        async function _loadSparklines() {
-            if (!currentOptions.length) return;
-            const syms = [...new Set(
-                currentOptions.map(o => o.option_symbol).filter(Boolean)
-            )];
-            if (!syms.length) return;
-            // Batch in chunks of 150 (URL length limit)
-            const CHUNK = 150;
-            try {
-                for (let i = 0; i < syms.length; i += CHUNK) {
-                    const batch = syms.slice(i, i + CHUNK);
-                    const resp = await fetch(
-                        '/api/history/sparklines?symbols=' + batch.join(',')
-                    );
-                    if (!resp.ok) continue;
-                    const data = await resp.json();
-                    Object.assign(_sparklineCache, data.sparklines || {});
-                }
-                _injectSparklines();
-            } catch(e) {
-                console.warn('Sparklines fetch error:', e);
-            }
-        }
-
-        function _injectSparklines() {
-            for (const opt of filteredOptions) {
-                const sym = opt.option_symbol;
-                if (!sym) continue;
-                const sparkData = _sparklineCache[sym];
-                if (!sparkData || sparkData.length < 2) continue;
-                const tr = document.querySelector(`tr[data-sym="${sym}"]`);
-                if (!tr) continue;
-                const td = tr.querySelector('td[data-field="score"]');
-                if (!td) continue;
-                const score = Number(opt.whale_score || opt.hybrid_score || 0);
-                const scoreCls = score >= 70 ? 'score-high'
-                               : (score >= 40 ? 'score-med' : 'score-low');
-                td.innerHTML =
-                    `<span class="score-pill ${scoreCls}">${score.toFixed(1)}</span>` +
-                    _makeSparklineSvg(sparkData);
-            }
         }
 
         function _makeSparklineSvg(values) {
@@ -1176,58 +892,6 @@
                    `stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>` +
                    `<circle cx="${lx}" cy="${ly}" r="2" fill="${color}"/>` +
                    `</svg>`;
-        }
-
-        function _patchLiveRow(opt, hasOptData, hasUndData) {
-            const sym = opt.option_symbol;
-            if (!sym) return;
-            const tr = document.querySelector(`tr[data-sym="${sym}"]`);
-            if (!tr) return;
-
-            const volume = Number(opt.volume || 0);
-            const oi     = Number(opt.open_interest || 0);
-            const volOi  = Number(opt.vol_oi_ratio || (oi > 0 ? volume/oi : 0)).toFixed(2);
-            const delta  = Number(opt.delta || 0).toFixed(2);
-            let iv = Number(opt.implied_volatility || 0);
-            if (iv > 0 && iv <= 1) iv *= 100;
-            const chgPct = Number(opt.change_pct || 0);
-            const stkVol = Number(opt.stock_volume || 0);
-            const moneyness = opt.moneyness || '';
-            const mPct      = Number(opt.moneyness_pct || 0);
-
-            const chgCls = chgPct > 0 ? 'chg-pos' : (chgPct < 0 ? 'chg-neg' : 'chg-neu');
-            const chgStr = chgPct !== 0
-                ? `<span class="${chgCls}">${chgPct > 0 ? '+' : ''}${chgPct.toFixed(2)}%</span>`
-                : '<span class="chg-neu">--</span>';
-
-            let locPos = 50;
-            if (moneyness === 'ITM') locPos = Math.max(5,  50 - Math.abs(mPct) * 3);
-            if (moneyness === 'OTM') locPos = Math.min(95, 50 + Math.abs(mPct) * 3);
-            const locClass = moneyness === 'ITM' ? 'loc-itm' : (moneyness === 'ATM' ? 'loc-atm' : 'loc-otm');
-            const locHtml = moneyness
-                ? `<span class="loc-bar"><span class="loc-track"><span class="loc-marker ${locClass}" style="left:${locPos}%"></span></span><span style="font-size:0.82em;color:#cbd5e0;margin-left:3px">${moneyness}</span></span>`
-                : '--';
-
-            const patches = {
-                'moneyness': locHtml,
-                'volume':    volume.toLocaleString(),
-                'oi':        oi.toLocaleString(),
-                'vol_oi':    `${volOi}x`,
-                'delta':     delta,
-                'iv':        iv > 0 ? `${iv.toFixed(1)}%` : '--',
-                'chg_pct':   chgStr,
-                'stk_vol':   stkVol > 0 ? `${(stkVol/1e6).toFixed(1)}M` : '--',
-            };
-
-            for (const [field, html] of Object.entries(patches)) {
-                const td = tr.querySelector(`td[data-field="${field}"]`);
-                if (td && td.innerHTML !== html) {
-                    td.innerHTML = html;
-                    td.classList.remove('live-flash');
-                    void td.offsetWidth; // force reflow
-                    td.classList.add('live-flash');
-                }
-            }
         }
 
         function createFlowRow(opt) {
@@ -1933,24 +1597,9 @@
 
         function updateSidebarStats() {}  // deprecated stub
 
-        // Initialize advanced filtering and WebSocket
+        // Initialize advanced filtering
         document.addEventListener('DOMContentLoaded', () => {
             initializeAdvancedFilters();
-            
-            // Setup WebSocket for real-time updates
-            window.wsManager = new WebSocketManager((message) => {
-                console.log('WebSocket message received:', message);
-                if (message.type === 'opportunities') {
-                    currentOptions = message.opportunities;
-                    filteredOptions = currentOptions;
-                    renderOptions(currentOptions);
-                    updateFilterStats(currentOptions);
-                } else if (message.type === 'status') {
-                    console.log('Status:', message.status);
-                }
-            });
-            
-            window.wsManager.connect();
         });
     </script>
     <script src="/ui/advanced-filters.js"></script>

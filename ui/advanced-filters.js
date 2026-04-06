@@ -14,79 +14,54 @@ class AdvancedFilterManager {
         this.loadPresets();
     }
 
-    async loadPresets() {
-        try {
-            const response = await fetch('/api/filtering/presets');
-            if (response.ok) {
-                this.presets = await response.json();
-                console.log('Presets loaded:', this.presets);
-            }
-        } catch (error) {
-            console.error('Error loading presets:', error);
-        }
+    loadPresets() {
+        this.presets = {
+            balanced:     { min_whale_score: 50, min_volume: 100, min_dte: 7,  max_dte: 45 },
+            aggressive:   { min_whale_score: 70, min_iv: 50,  min_volume: 500, max_dte: 21 },
+            conservative: { min_whale_score: 40, max_iv: 80,  min_dte: 14,    max_dte: 60 },
+            high_iv:      { min_iv: 80, min_whale_score: 40 },
+            near_term:    { max_dte: 14, min_volume: 100 },
+            medium_term:  { min_dte: 15, max_dte: 60 }
+        };
+        console.log('Presets loaded (local):', this.presets);
     }
 
-    async applyFilters(opportunities, filters) {
-        try {
-            const response = await fetch('/api/filtering/apply', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    opportunities: opportunities,
-                    filters: filters
-                })
-            });
-            
-            if (response.ok) {
-                const result = await response.json();
-                console.log(`Filters applied: ${result.original_count} → ${result.filtered_count}`);
-                return result.opportunities;
-            }
-        } catch (error) {
-            console.error('Error applying filters:', error);
-            return opportunities;
-        }
+    applyFilters(opportunities, filters) {
+        const result = opportunities.filter(opp => {
+            if (filters.min_price      != null && (opp.option_price  || 0) < filters.min_price)      return false;
+            if (filters.max_price      != null && (opp.option_price  || 0) > filters.max_price)      return false;
+            if (filters.min_strike     != null && (opp.strike        || 0) < filters.min_strike)     return false;
+            if (filters.max_strike     != null && (opp.strike        || 0) > filters.max_strike)     return false;
+            if (filters.min_dte        != null && (opp.dte           || 0) < filters.min_dte)        return false;
+            if (filters.max_dte        != null && (opp.dte           || 0) > filters.max_dte)        return false;
+            if (filters.min_iv         != null && (opp.iv            || 0) * 100 < filters.min_iv)   return false;
+            if (filters.max_iv         != null && (opp.iv            || 0) * 100 > filters.max_iv)   return false;
+            if (filters.min_volume     != null && (opp.volume        || 0) < filters.min_volume)     return false;
+            if (filters.max_volume     != null && (opp.volume        || 0) > filters.max_volume)     return false;
+            if (filters.min_whale_score != null && (opp.whale_score  || 0) < filters.min_whale_score) return false;
+            if (filters.max_whale_score != null && (opp.whale_score  || 0) > filters.max_whale_score) return false;
+            return true;
+        });
+        console.log(`Filters applied: ${opportunities.length} → ${result.length}`);
+        return result;
     }
 
-    async applyPreset(opportunities, presetName) {
-        try {
-            const response = await fetch(`/api/filtering/apply-preset?preset_name=${presetName}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(opportunities)
-            });
-            
-            if (response.ok) {
-                const result = await response.json();
-                return result.opportunities;
-            }
-        } catch (error) {
-            console.error('Error applying preset:', error);
-            return opportunities;
-        }
+    applyPreset(opportunities, presetName) {
+        const presetFilters = this.presets[presetName] || {};
+        return this.applyFilters(opportunities, presetFilters);
     }
 
-    async sortOpportunities(opportunities, sortBy = 'whale_score', ascending = false) {
-        try {
-            const params = new URLSearchParams({
-                sort_by: sortBy,
-                ascending: ascending
-            });
-            
-            const response = await fetch(`/api/filtering/sort?${params}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(opportunities)
-            });
-            
-            if (response.ok) {
-                const result = await response.json();
-                return result.opportunities;
-            }
-        } catch (error) {
-            console.error('Error sorting opportunities:', error);
-            return opportunities;
-        }
+    sortOpportunities(opportunities, sortBy = 'whale_score', ascending = false) {
+        const fieldMap = {
+            whale_score: 'whale_score', volume: 'volume', price: 'option_price',
+            dte: 'dte', delta: 'delta', iv: 'iv', oi: 'open_interest', strike: 'strike'
+        };
+        const field = fieldMap[sortBy] || sortBy;
+        return [...opportunities].sort((a, b) => {
+            const va = a[field] ?? 0;
+            const vb = b[field] ?? 0;
+            return ascending ? va - vb : vb - va;
+        });
     }
 
     getPresetDetails(presetName) {
@@ -136,110 +111,6 @@ class AdvancedFilterManager {
             input.value = '';
         });
         this.currentFilters = {};
-    }
-}
-
-/**
- * WebSocket Manager for Real-Time Updates
- */
-class WebSocketManager {
-    constructor(onMessage = null) {
-        this.ws = null;
-        this.onMessage = onMessage;
-        this.reconnectAttempts = 0;
-        this.maxReconnectAttempts = 5;
-        this.reconnectDelay = 1000;
-        this.isConnecting = false;
-    }
-
-    connect() {
-        if (this.ws || this.isConnecting) return;
-        
-        this.isConnecting = true;
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${protocol}//${window.location.host}/ws`;
-        
-        console.log('Connecting to WebSocket:', wsUrl);
-        
-        try {
-            this.ws = new WebSocket(wsUrl);
-            
-            this.ws.onopen = () => {
-                console.log('WebSocket connected');
-                this.isConnecting = false;
-                this.reconnectAttempts = 0;
-                this.updateConnectionStatus(true);
-            };
-            
-            this.ws.onmessage = (event) => {
-                try {
-                    const message = JSON.parse(event.data);
-                    console.log('WebSocket message:', message);
-                    if (this.onMessage) {
-                        this.onMessage(message);
-                    }
-                } catch (error) {
-                    console.error('Error parsing WebSocket message:', error);
-                }
-            };
-            
-            this.ws.onerror = (error) => {
-                console.error('WebSocket error:', error);
-                this.updateConnectionStatus(false);
-            };
-            
-            this.ws.onclose = () => {
-                console.log('WebSocket disconnected');
-                this.ws = null;
-                this.isConnecting = false;
-                this.updateConnectionStatus(false);
-                this.attemptReconnect();
-            };
-        } catch (error) {
-            console.error('Error connecting to WebSocket:', error);
-            this.isConnecting = false;
-            this.attemptReconnect();
-        }
-    }
-
-    attemptReconnect() {
-        if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-            console.warn('Max reconnect attempts reached');
-            return;
-        }
-        
-        this.reconnectAttempts++;
-        const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
-        console.log(`Attempting reconnect in ${delay}ms (attempt ${this.reconnectAttempts})`);
-        
-        setTimeout(() => this.connect(), delay);
-    }
-
-    send(message) {
-        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-            this.ws.send(JSON.stringify(message));
-        } else {
-            console.warn('WebSocket not connected, queuing message');
-        }
-    }
-
-    disconnect() {
-        if (this.ws) {
-            this.ws.close();
-            this.ws = null;
-        }
-    }
-
-    updateConnectionStatus(connected) {
-        const indicator = document.getElementById('ws-connection-status');
-        if (indicator) {
-            indicator.className = connected ? 'connected' : 'disconnected';
-            indicator.title = connected ? 'Connected' : 'Disconnected';
-        }
-    }
-
-    isConnected() {
-        return this.ws && this.ws.readyState === WebSocket.OPEN;
     }
 }
 
@@ -470,42 +341,39 @@ function setupPresetButtons() {
     });
 }
 
-async function applyFiltersFromUI() {
+function applyFiltersFromUI() {
     const filterManager = window.filterManager;
     if (!filterManager || !currentOptions) return;
     
     const filters = filterManager.buildFiltersFromUI();
-    let results = await filterManager.applyFilters(currentOptions, filters);
+    let results = filterManager.applyFilters(currentOptions, filters);
     
     // Apply sorting
     const sortBy = document.getElementById('sort-by-select')?.value || 'whale_score';
     const ascending = document.getElementById('sort-ascending')?.checked || false;
-    results = await filterManager.sortOpportunities(results, sortBy, ascending);
+    results = filterManager.sortOpportunities(results, sortBy, ascending);
     
     filteredOptions = results;
     updateFilterStats(results);
     renderOptions(results);
 }
 
-async function applyPresetFilter(presetName) {
+function applyPresetFilter(presetName) {
     const filterManager = window.filterManager;
     if (!filterManager || !currentOptions) return;
     
     console.log(`Applying preset: ${presetName}`);
     
-    // Apply the preset
-    let results = await filterManager.applyPreset(currentOptions, presetName);
+    let results = filterManager.applyPreset(currentOptions, presetName);
     
-    // Apply sorting if configured
     const sortBy = document.getElementById('sort-by-select')?.value || 'whale_score';
     const ascending = document.getElementById('sort-ascending')?.checked || false;
-    results = await filterManager.sortOpportunities(results, sortBy, ascending);
+    results = filterManager.sortOpportunities(results, sortBy, ascending);
     
     filteredOptions = results;
     updateFilterStats(results);
     renderOptions(results);
     
-    // Show notification
     showNotification(`Preset "${presetName}" applied: ${results.length} results`);
 }
 
@@ -570,4 +438,3 @@ function showNotification(message) {
 
 // Export for global use
 window.AdvancedFilterManager = AdvancedFilterManager;
-window.WebSocketManager = WebSocketManager;
