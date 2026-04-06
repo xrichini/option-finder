@@ -1,0 +1,40 @@
+name: Deploy GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "data/latest_scan.json"
+      - "ui/**"
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Build & deploy static UI
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # nécessaire pour pousser sur gh-pages
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare dist/
+        run: |
+          mkdir -p dist/data
+          cp -r ui/. dist/
+          # Copier le JSON de scan si disponible, sinon créer un placeholder
+          if [ -f data/latest_scan.json ]; then
+            cp data/latest_scan.json dist/data/latest_scan.json
+          else
+            echo '{"success":false,"opportunities":[],"timestamp":null,"_placeholder":true}' \
+              > dist/data/latest_scan.json
+          fi
+          echo "✅ dist/ prêt — $(find dist -type f | wc -l) fichiers"
+
+      - name: Deploy to GitHub Pages
+        uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          folder: dist
+          branch: gh-pages
+          clean: true
