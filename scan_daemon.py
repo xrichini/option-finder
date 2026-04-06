@@ -290,9 +290,12 @@ def do_scan(universe: str, params: dict):
         logger.info("🔄 Enrichissement avec données insider...")
         try:
             from api.finviz_enrichment import enrich_opportunities_with_insider_data
+
             opportunities = enrich_opportunities_with_insider_data(opportunities)
         except Exception as e:
-            logger.warning(f"⚠️  Enrichissement insider non disponible ({e}), continuant sans...")
+            logger.warning(
+                f"⚠️  Enrichissement insider non disponible ({e}), continuant sans..."
+            )
             # opportunities remain unmodified if enrichment fails
 
         write_results(opportunities, universe, symbols)
