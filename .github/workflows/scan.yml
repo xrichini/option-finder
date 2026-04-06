@@ -2,8 +2,9 @@ name: Option Scan (GHA)
 
 on:
   schedule:
-    # Toutes les 30 min, lun-ven, 14h00–21h30 UTC (≈ 9h30–16h ET + marge)
-    - cron: "*/30 14-21 * * 1-5"
+    # Toutes les 15 min, lun-ven, 14h00–21h30 UTC (≈ 9h30–16h ET + marge)
+    # Docker optimization: ~1.5-2 min per scan, very safe within Tradier 120 req/min limit
+    - cron: "*/15 14-21 * * 1-5"
   workflow_dispatch:
     inputs:
       universe:
