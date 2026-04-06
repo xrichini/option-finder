@@ -32,9 +32,6 @@ from pathlib import Path
 import pandas as pd
 from dotenv import load_dotenv
 
-# ── Local imports ───────────────────────────────────────────────────────────
-from api.finviz_enrichment import enrich_opportunities_with_insider_data
-
 load_dotenv()
 
 # ── Logging ─────────────────────────────────────────────────────────────────
@@ -289,9 +286,14 @@ def do_scan(universe: str, params: dict):
 
         opportunities = asyncio.run(run_scan_async(symbols, params))
 
-        # Enrich with insider trading data
+        # Enrich with insider trading data (lazy import to avoid circular dependencies)
         logger.info("🔄 Enrichissement avec données insider...")
-        opportunities = enrich_opportunities_with_insider_data(opportunities)
+        try:
+            from api.finviz_enrichment import enrich_opportunities_with_insider_data
+            opportunities = enrich_opportunities_with_insider_data(opportunities)
+        except Exception as e:
+            logger.warning(f"⚠️  Enrichissement insider non disponible ({e}), continuant sans...")
+            # opportunities remain unmodified if enrichment fails
 
         write_results(opportunities, universe, symbols)
 
