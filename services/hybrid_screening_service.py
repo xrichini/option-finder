@@ -13,8 +13,6 @@ from datetime import datetime
 import asyncio
 from services.screening_service import ScreeningService
 from services.hybrid_data_service import HybridDataService
-from api.earnings_endpoints import get_earnings_map
-from api.fmp_enrichment import get_profiles, get_key_metrics, get_insider_activity
 
 logger = logging.getLogger(__name__)
 
@@ -134,6 +132,10 @@ class HybridScreeningService(ScreeningService):
             )
 
             # Pre-fetch FMP data concurrently (non-bloquant — dict vide si indisponible)
+            # Lazy import to avoid circular dependencies
+            from api.earnings_endpoints import get_earnings_map
+            from api.fmp_enrichment import get_profiles, get_key_metrics, get_insider_activity
+            
             (
                 earnings_map,
                 profile_map,

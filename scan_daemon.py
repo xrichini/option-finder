@@ -114,13 +114,86 @@ def is_market_open() -> bool:
 def fetch_symbols(universe: str) -> list:
     """
     Résout la liste de symboles pour l'univers donné.
-    Utilise la logique existante (FMP → Wikipedia fallback, cache 24h).
+    Utilise FMP API → Wikipedia fallback. Bypass api/__init__.py pour éviter la boucle d'imports.
     """
-    from api.universe_endpoints import _fetch_universe
+    import requests
+    import os
+    from io import StringIO
 
-    symbols, source = _fetch_universe(universe)
-    logger.info(f"📋 Universe {universe}: {len(symbols)} symboles (source: {source})")
-    return symbols
+    # URLs et clés
+    FMP_BASE = "https://financialmodelingprep.com/api/v3"
+    FMP_ENDPOINTS = {
+        "sp500": f"{FMP_BASE}/sp500_constituent",
+        "nasdaq100": f"{FMP_BASE}/nasdaq_constituent",
+        "dow30": f"{FMP_BASE}/dowjones_constituent",
+    }
+    WIKI_URLS = {
+        "sp500": "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies",
+        "nasdaq100": "https://en.wikipedia.org/wiki/Nasdaq-100",
+        "dow30": "https://en.wikipedia.org/wiki/Dow_Jones_Industrial_Average",
+    }
+    BOUNDS = {
+        "sp500": (490, 510),
+        "nasdaq100": (95, 110),
+        "dow30": (25, 35),
+    }
+    HEADERS = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    }
+
+    def normalize(symbols):
+        out = []
+        for s in symbols:
+            s = str(s).strip().replace(".", "-")
+            if s and s.lower() != "nan" and 1 <= len(s) <= 6:
+                out.append(s)
+        return out
+
+    # 1. Try FMP
+    try:
+        api_key = os.getenv("FMP_API_KEY", "").strip()
+        if not api_key:
+            raise ValueError("FMP_API_KEY not set")
+        url = FMP_ENDPOINTS[universe]
+        resp = requests.get(url, params={"apikey": api_key}, timeout=15)
+        if resp.status_code == 401:
+            raise ValueError(f"FMP invalid key (HTTP 401)")
+        resp.raise_for_status()
+        data = resp.json()
+        symbols = normalize([row.get("symbol", "") for row in data])
+        lo, hi = BOUNDS[universe]
+        if lo <= len(symbols) <= hi:
+            logger.info(f"✅ FMP {universe}: {len(symbols)} tickers")
+            return symbols
+        raise ValueError(f"FMP {universe}: {len(symbols)} tickers, expected {lo}–{hi}")
+    except Exception as e:
+        logger.warning(f"⚠️  FMP {universe} failed, trying Wikipedia — {e}")
+
+    # 2. Fallback Wikipedia
+    try:
+        import pandas as pd
+
+        url = WIKI_URLS[universe]
+        resp = requests.get(url, headers=HEADERS, timeout=15)
+        resp.raise_for_status()
+        tables = pd.read_html(StringIO(resp.text), header=0)
+        lo, hi = BOUNDS[universe]
+        for df in tables:
+            cols_lower = [c.lower() for c in df.columns]
+            if any("symbol" in c or "ticker" in c for c in cols_lower):
+                col = next(
+                    c
+                    for c in df.columns
+                    if "symbol" in c.lower() or "ticker" in c.lower()
+                )
+                symbols = normalize(df[col].tolist())
+                if lo <= len(symbols) <= hi:
+                    logger.info(f"✅ Wikipedia {universe}: {len(symbols)} tickers")
+                    return symbols
+        raise ValueError(f"No valid table found on Wikipedia for {universe}")
+    except Exception as e:
+        logger.error(f"❌ Wikipedia {universe} failed — {e}")
+        raise RuntimeError(f"Could not fetch {universe} from FMP or Wikipedia")
 
 
 # ── Async scan core ─────────────────────────────────────────────────────────
@@ -296,7 +369,9 @@ def main():
     # ── Mode one-shot ────────────────────────────────────────────────────────
     if args.once:
         if not args.force and not is_market_open():
-            logger.info("⏸️  Marché fermé — aucun scan lancé (utilise --force pour outrepasser).")
+            logger.info(
+                "⏸️  Marché fermé — aucun scan lancé (utilise --force pour outrepasser)."
+            )
             sys.exit(0)
         do_scan(args.universe, params)
         return
