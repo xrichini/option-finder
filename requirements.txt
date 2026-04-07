@@ -29,9 +29,6 @@ nest-asyncio==1.5.8
 # AI/ML APIs (optional)
 openai==1.3.7
 
-# Insider enrichment (optional - installed separately in Docker/GHA via finviz-mcp[all])
-# To test locally, install separately: pip install -e git+https://github.com/xrichini/finviz-mcp.git#egg=finviz-mcp
-
 
 # Utilitaires FastAPI
 python-multipart==0.0.6  # Pour les uploads de fichiers

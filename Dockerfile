@@ -1,5 +1,5 @@
 # Multi-stage Docker image for option-finder scanner
-# Optimized for GitHub Actions CI/CD with insider trading enrichment
+# Optimized for GitHub Actions CI/CD
 
 # Stage 1: Builder
 FROM python:3.11-slim as builder
@@ -10,16 +10,15 @@ WORKDIR /build
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
-    git \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir --user -r requirements.txt
 
-# Install finviz-mcp for insider enrichment
-RUN pip install --no-cache-dir --user \
-    -e git+https://github.com/xrichini/finviz-mcp.git@master#egg=finviz-mcp
+# Install finvizfinance for insider enrichment (optional fallback)
+# finviz-mcp will not be available in Docker, but enrichment fails gracefully
+RUN pip install --no-cache-dir --user finvizfinance>=1.3.0 2>/dev/null || true
 
 # Stage 2: Runtime (minimal image)
 FROM python:3.11-slim
