@@ -432,6 +432,9 @@ class ScreeningService:
                     option["option_type"], option["strike"], underlying_price
                 )
 
+                # Order flow signals
+                flow_signals = self._detect_order_flow_signals(option)
+
                 opportunity = OptionsOpportunity(
                     underlying_symbol=symbol,
                     option_symbol=option["symbol"],
@@ -462,6 +465,10 @@ class ScreeningService:
                     sizzle_index=sizzle,
                     moneyness=moneyness_label,
                     moneyness_pct=moneyness_pct,
+                    # Order flow signals
+                    has_block_trade=flow_signals["block_trade"],
+                    spread_compression_pct=flow_signals["spread_pct"],
+                    net_flow_direction=flow_signals["flow_direction"],
                 )
                 opportunities.append(opportunity)
 
@@ -473,9 +480,72 @@ class ScreeningService:
 
         return opportunities
 
+    def _detect_order_flow_signals(self, option: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Détecte les signaux d'order flow pour une option.
+
+        Retourne:
+        {
+            'block_trade': bool,
+            'spread_pct': float,
+            'flow_direction': str ('bullish'|'bearish'|'neutral')
+        }
+        """
+        try:
+            volume = option.get("volume", 0)
+            bid = option.get("bid", 0)
+            ask = option.get("ask", 0)
+            last = option.get("last", 0)
+
+            # Block Trade Detection
+            block_trade = volume >= 100
+
+            # Spread Compression
+            spread_pct = 100.0
+            if bid > 0 and ask > 0:
+                mid_price = (bid + ask) / 2
+                spread_pct = (
+                    round((ask - bid) / mid_price * 100, 2) if mid_price > 0 else 100
+                )
+
+            # Net Flow Indicator
+            flow_direction = "neutral"
+            if last > 0 and bid > 0 and ask > 0:
+                mid_price = (bid + ask) / 2
+                distance_to_ask = abs(last - ask)
+                distance_to_bid = abs(last - bid)
+
+                if distance_to_ask < distance_to_bid:
+                    flow_direction = "bullish"  # Last closer to ask = buying pressure
+                elif distance_to_bid < distance_to_ask:
+                    flow_direction = "bearish"  # Last closer to bid = selling pressure
+
+            return {
+                "block_trade": block_trade,
+                "spread_pct": spread_pct,
+                "flow_direction": flow_direction,
+            }
+
+        except Exception as e:
+            logger.debug(f"Error detecting order flow signals: {e}")
+            return {
+                "block_trade": False,
+                "spread_pct": 100.0,
+                "flow_direction": "neutral",
+            }
+
     def _calculate_whale_score(self, option: Dict[str, Any]) -> float:
         """
-        Calcule le whale score pour une option
+        Calcule le whale score pour une option avec signaux d'order flow.
+
+        Basé sur:
+        - Volume/OI ratio volatilité
+        - Volume absolu
+        - Open Interest
+        - DTE penalty
+        - Block Trade Detection (volume spike)
+        - Spread Compression (liquidité institutionnelle)
+        - Net Flow Indicator (bid/ask imbalance)
 
         Args:
             option: Données de l'option
@@ -488,9 +558,14 @@ class ScreeningService:
             volume = option["volume"]
             open_interest = option["open_interest"]
             dte = option["dte"]
+            bid = option.get("bid", 0)
+            ask = option.get("ask", 0)
+            last = option.get("last", 0)
 
             if volume <= 0 or open_interest <= 0:
                 return 0.0
+
+            # ============ BASE SCORE ============
 
             # Score basé sur le ratio volume/OI
             volume_oi_ratio = volume / max(open_interest, 1)
@@ -508,9 +583,49 @@ class ScreeningService:
             elif dte > 30:
                 dte_penalty = 0.8
 
-            # Score final (0-100)
             raw_score = (volume_oi_ratio * 20 + volume_score + oi_score) * dte_penalty
-            return min(raw_score, 100.0)
+
+            # ============ ORDER FLOW SIGNALS ============
+
+            flow_bonus = 0.0
+
+            # #1: BLOCK TRADE DETECTION
+            # Volume spike = potentiel block trade
+            if volume >= 100:  # Seuil minimum pour considérer un block trade
+                flow_bonus += 3.0  # +3 points pour block trade potentiel
+
+            # #4: SPREAD COMPRESSION
+            # Spread faible % = meilleure liquidité = activity institutionnelle probable
+            if bid > 0 and ask > 0:
+                mid_price = (bid + ask) / 2
+                spread_pct = ((ask - bid) / mid_price * 100) if mid_price > 0 else 100
+
+                # Bonus décroissant selon la compression du spread
+                if spread_pct < 0.5:
+                    flow_bonus += 5.0  # Très serré = whale activity très probable
+                elif spread_pct < 1.0:
+                    flow_bonus += 3.5
+                elif spread_pct < 2.0:
+                    flow_bonus += 2.0
+                elif spread_pct < 5.0:
+                    flow_bonus += 1.0
+
+            # #2: NET FLOW INDICATOR
+            # Note: Sans données de bid/ask imbalance en temps réel,
+            # on utilise une heuristique sur le dernier prix vs mid
+            # (Simplifié: si last proche de ask = accumulation/buying)
+            if last > 0 and bid > 0 and ask > 0:
+                mid_price = (bid + ask) / 2
+                distance_to_ask = abs(last - ask)
+                distance_to_bid = abs(last - bid)
+
+                # Si last plus proche de ask = buying pressure
+                if distance_to_ask < distance_to_bid:
+                    flow_bonus += 2.0
+
+            # Score final avec bonus d'order flow
+            final_score = raw_score + flow_bonus
+            return min(final_score, 100.0)
 
         except Exception as e:
             logger.error(f"Erreur calcul whale score: {e}")

@@ -1,16 +1,17 @@
 # TODO — Squeeze Finder
 
-Last commit: `e0f1d2d` — FMP stable API migration + Beta/Sector enrichment
+Last commit: `46d90a4` — Insider enrichment via Finviz (97 tickers with recent activity)
 
 ---
 
 ## 🔥 Priorité haute
 
-- [ ] **Insider Trading (payant FMP)**
-  - `/stable/insider-trading/search` retourne HTTP 402 → plan B
-  - Option A: utiliser `SEC EDGAR` Form 4 (gratuit) — `https://efts.sec.gov/LATEST/search-index?q=%22{sym}%22&dateRange=custom&startdt={30j_ago}&forms=4`
-  - Option B: `OpenInsider` scraping (https://openinsider.com/screener) — HTML table, facile à parser
-  - Signal attendu: 🟢 bullish / 🔴 bearish / 🟡 mixed / ⚪ neutral sur 30j
+- [x] **Insider Trading**
+  - ✅ Plan B implémenté: Finviz (finviz-mcp) + finvizfinance.insider API
+  - ✅ Coverage: 97 tickers avec activité insider récente (30 jours)
+  - ✅ Sentiment: 🟢 bullish / 🔴 bearish / ⚪ neutral
+  - ✅ Score boost: 1.05-1.20x pour bullish
+  - 📝 Limitation: Couvre surtout small-caps; mega-caps (AAPL, MSFT, etc.) restent neutral (pas d'activité récente sur Finviz)
 
 - [x] **FMP quota 250 req/day**
   - DOW30 = 30 symbols × (1 profile + 1 ratios-ttm) = 60 appels/scan
@@ -19,7 +20,7 @@ Last commit: `e0f1d2d` — FMP stable API migration + Beta/Sector enrichment
     (Tradier d'abord, FMP seulement sur les meilleures opps → max 100 appels/scan S&P500)
   - ✅ Compteur quota dans `fmp_enrichment._quota` + exposé sur `GET /api/fmp/cache/status`
 
-- [ ] **Colonnes masquables (UI)**
+- [ ] **Colonnes masquables (UI)** — PRIORITÉ BASSE
   - Ajouter un bouton "Columns" pour afficher/masquer des colonnes (Beta, Insider, IVR, V5d…)
   - Sauvegarder préférence dans `localStorage`
 
@@ -58,6 +59,34 @@ Last commit: `e0f1d2d` — FMP stable API migration + Beta/Sector enrichment
 ---
 
 ## 🛠 Technique / Qualité
+
+- [ ] **Order Flow Signals — Enrichissement du whale_score**
+  - [ ] **#1: Block Trade Detection** ⚡ FACILE
+    - Volume > seuil + spread normal = potentiel block trade
+    - Flag `has_block_trade` si vol > seuil ET vol > 2×avg_vol_30d
+    - Source: Tradier (déjà dispo)
+  
+  - [ ] **#2: Net Flow Indicator** ⚡ FACILE
+    - Bid/ask imbalance = direction du flow
+    - Si bid_imbalance > threshold = accumulation (bullish)
+    - Heuristique simple sur ticks
+    - Source: Tradier quotes
+
+  - [ ] **#4: Spread Compression** ⚡ FACILE
+    - Spread petit % = meilleure liquidité = institutional activity probable
+    - Flag si spread < 2% ET volume élevé
+    - Ratio (ask-bid) / mid_price
+    - Source: Tradier
+
+  - [ ] **#3: OI Momentum** 📊 MOYEN
+    - Changement OI vs jour précédent = intérêt nouveau
+    - OI up 30%+ = nouveaux gros positionnements
+    - Source: Comparaison avec `options_history.db`
+
+  - [ ] **#5: Put/Call Flow Ratio** 📊 MOYEN
+    - Unusual put volume vs calls = hedge buying (bearish flow)
+    - Agrégation par underlying
+    - Source: Calcul local
 
 - [ ] **Tests sur FMP quota réel**
   - Faire tourner S&P500 complet et mesurer consommation quota FMP

@@ -299,6 +299,13 @@ class OptionsOpportunity(BaseModel):
     oi_spike_ratio: float = 0.0  # OI aujourd'hui / avg OI 5j
     vol_trend_ratio: float = 0.0  # Vol aujourd'hui / avg Vol 5j
 
+    # --- Signaux d'order flow ---
+    has_block_trade: bool = False  # Volume >= 100 contracts
+    spread_compression_pct: float = 100.0  # (Ask-Bid)/Mid * 100
+    net_flow_direction: str = (
+        "neutral"  # 'bullish'|'bearish'|'neutral' (derniers prix vs mid)
+    )
+
 
 class ErrorResponse(BaseModel):
     """Réponse d'erreur standardisée"""
