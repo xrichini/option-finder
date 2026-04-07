@@ -298,6 +298,27 @@ def do_scan(universe: str, params: dict):
             )
             # opportunities remain unmodified if enrichment fails
 
+        # B1: Purge expired options from database (keep 30 days of history)
+        logger.info("🧹 Purge des options expirées...")
+        try:
+            from api.db_cleanup import purge_expired_options, get_db_stats
+
+            cleanup_result = purge_expired_options(days_old=30)
+            logger.info(
+                f"✅ Nettoyage DB: {cleanup_result['deleted']} supprimées, "
+                f"{cleanup_result['remaining']} restantes, "
+                f"{cleanup_result['freed_mb']:.1f} MB libérés"
+            )
+
+            # Log DB stats for monitoring
+            db_stats = get_db_stats()
+            logger.info(
+                f"📊 Stats DB: {db_stats['size_mb']:.1f} MB, "
+                f"{db_stats['record_count']} records ({db_stats['oldest_record']} → {db_stats['newest_record']})"
+            )
+        except Exception as e:
+            logger.warning(f"⚠️  Nettoyage DB non disponible ({e}), continuant...")
+
         write_results(opportunities, universe, symbols)
 
         elapsed = (datetime.now() - start).total_seconds()
