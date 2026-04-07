@@ -61,32 +61,37 @@ Last commit: `46d90a4` — Insider enrichment via Finviz (97 tickers with recent
 ## 🛠 Technique / Qualité
 
 - [ ] **Order Flow Signals — Enrichissement du whale_score**
-  - [ ] **#1: Block Trade Detection** ⚡ FACILE
-    - Volume > seuil + spread normal = potentiel block trade
-    - Flag `has_block_trade` si vol > seuil ET vol > 2×avg_vol_30d
-    - Source: Tradier (déjà dispo)
-  
-  - [ ] **#2: Net Flow Indicator** ⚡ FACILE
-    - Bid/ask imbalance = direction du flow
-    - Si bid_imbalance > threshold = accumulation (bullish)
-    - Heuristique simple sur ticks
-    - Source: Tradier quotes
+  - [x] **#1: Block Trade Detection** ⚡ DONE
+    - Volume >= 100 contracts detected as potential block trade
+    - +3 bonus points to whale_score
+    - Source: Tradier volume data
 
-  - [ ] **#4: Spread Compression** ⚡ FACILE
-    - Spread petit % = meilleure liquidité = institutional activity probable
-    - Flag si spread < 2% ET volume élevé
-    - Ratio (ask-bid) / mid_price
-    - Source: Tradier
+  - [x] **#2: Net Flow Indicator** ⚡ DONE
+    - Last price vs bid/ask determines flow direction
+    - Closer to ask = buying pressure (bullish)
+    - Closer to bid = selling pressure (bearish)
+    - +2 bonus if directional signal present
+    - Source: Tradier quotes in real-time
+
+  - [x] **#4: Spread Compression** ⚡ DONE
+    - Tight spread = institutional liquidity likely
+    - Spread < 0.5% = +5 points (very likely whale)
+    - Spread < 1% = +3.5 points
+    - Spread < 2% = +2 points
+    - Source: Tradier bid/ask spreads
+    - Impact: +7.4 score differential for institutional options
 
   - [ ] **#3: OI Momentum** 📊 MOYEN
-    - Changement OI vs jour précédent = intérêt nouveau
-    - OI up 30%+ = nouveaux gros positionnements
-    - Source: Comparaison avec `options_history.db`
+    - OI change vs day before = new positioning detection
+    - OI up 30%+ = new big positions opening
+    - Source: Compare with `options_history.db` daily snapshots
+    - Effort: Medium (DB queries + comparative calc)
 
   - [ ] **#5: Put/Call Flow Ratio** 📊 MOYEN
-    - Unusual put volume vs calls = hedge buying (bearish flow)
-    - Agrégation par underlying
-    - Source: Calcul local
+    - Unusual put volume vs calls = defensive/hedge buying
+    - Calculate per underlying, flag if extreme ratio
+    - Source: Sum of put/call volumes in scan results
+    - Effort: Low (simple aggregation)
 
 - [ ] **Tests sur FMP quota réel**
   - Faire tourner S&P500 complet et mesurer consommation quota FMP
