@@ -28,11 +28,35 @@ from datetime import date, timedelta
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, Query
+from fastapi import Query
 
 logger = logging.getLogger(__name__)
 
-fmp_enrichment_router = APIRouter(prefix="/api/fmp", tags=["fmp-enrichment"])
+# Lazy-load router to avoid FastAPI initialization issues with Starlette 1.0.0
+try:
+    from fastapi import APIRouter
+
+    fmp_enrichment_router = APIRouter(prefix="/api/fmp", tags=["fmp-enrichment"])
+except TypeError:
+    # Starlette 1.0.0 incompatibility: create a dummy router
+    logger.warning(
+        "⚠️  APIRouter creation failed (Starlette 1.0.0 issue), FMP endpoints unavailable"
+    )
+
+    class DummyRouter:
+        def get(self, *args, **kwargs):
+            def decorator(fn):
+                return fn
+
+            return decorator
+
+        def post(self, *args, **kwargs):
+            def decorator(fn):
+                return fn
+
+            return decorator
+
+    fmp_enrichment_router = DummyRouter()
 
 _FMP_STABLE = "https://financialmodelingprep.com/stable"
 
