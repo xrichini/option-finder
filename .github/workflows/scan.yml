@@ -73,10 +73,5 @@ jobs:
             git commit -m "chore: scan results $(date -u '+%Y-%m-%dT%H:%MZ')" &&
             git push
           )
-
-      - name: Trigger GitHub Pages deployment
-        if: ${{ success() }}
-        run: |
-          gh workflow run deploy.yml -r main
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
