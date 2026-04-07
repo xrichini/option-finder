@@ -90,7 +90,8 @@ def enrich_opportunities_with_insider_data(opportunities: list[dict]) -> list[di
 
         enriched = []
         for opp in opportunities:
-            ticker = opp.get("symbol", "").upper()
+            ticker = opp.get("underlying_symbol") or opp.get("symbol", "")
+            ticker = ticker.upper()
 
             # Default insider data (neutral)
             opp["insider_sentiment"] = "neutral"

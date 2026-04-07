@@ -133,7 +133,7 @@ class HybridScreeningService(ScreeningService):
 
             # Pre-fetch FMP data concurrently (non-bloquant — dict vide si indisponible)
             # Lazy import to avoid circular dependencies
-            from api.earnings_endpoints import get_earnings_map
+            from api.earnings_utils import get_earnings_map
             from api.fmp_enrichment import (
                 get_profiles,
                 get_key_metrics,
