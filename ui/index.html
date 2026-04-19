@@ -1078,44 +1078,6 @@
                     }
                 }
             });
-
-
-        function _updateSparklinesBadges() {
-            // Update sparklines in the rendered table after trend data arrives
-            const body = document.getElementById('flowTableBody');
-            if (!body) return;
-            const rows = body.querySelectorAll('tr');
-            rows.forEach((row, idx) => {
-                if (idx >= filteredOptions.length) return;
-                const opt = filteredOptions[idx];
-                if (!opt.option_symbol) return;
-                const cells = row.querySelectorAll('td');
-                
-                // Find OrdFlow and CrushProb cells (counting from the end)
-                // Score is at cells.length - 1, CrushProb at -2, OrdFlow at -3
-                const ordFlowCellIdx = cells.length - 3;
-                const crushProbCellIdx = cells.length - 2;
-                
-                if (ordFlowCellIdx >= 0 && ordFlowCellIdx < cells.length) {
-                    const ordFlowCell = cells[ordFlowCellIdx];
-                    if (_flowTrendCache[opt.option_symbol]) {
-                        const flowSparkline = _makeFlowTrendSparkline(_flowTrendCache[opt.option_symbol]);
-                        if (!ordFlowCell.innerHTML.includes('svg')) {
-                            ordFlowCell.innerHTML += flowSparkline;
-                        }
-                    }
-                }
-                
-                if (crushProbCellIdx >= 0 && crushProbCellIdx < cells.length) {
-                    const crushProbCell = cells[crushProbCellIdx];
-                    if (_crushTrendCache[opt.option_symbol]) {
-                        const crushSparkline = _makeCrushTrendSparkline(_crushTrendCache[opt.option_symbol]);
-                        if (!crushProbCell.innerHTML.includes('svg')) {
-                            crushProbCell.innerHTML += crushSparkline;
-                        }
-                    }
-                }
-            });
         }
 
         function createFlowRow(opt) {
