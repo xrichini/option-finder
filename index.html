@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>🐳 Options Flow Screener</title>
-    <link rel="stylesheet" href="./advanced-filters.css">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -381,7 +380,7 @@
                 </select>
             </label>
             <label>DTE Min
-                <input id="fpDteMin" type="number" value="3" min="0" max="60" style="width:50px">
+                <input id="fpDteMin" type="number" value="1" min="0" max="60" style="width:50px">
             </label>
             <label>DTE Max
                 <input id="fpDteMax" type="number" value="14" min="0" max="365" style="width:50px">
@@ -1673,15 +1672,6 @@
 
         function updateSidebarStats() {}  // deprecated stub
 
-    </script>
-    <script src="./advanced-filters.js"></script>
-    <script>
-        // Initialize advanced filtering after script loads
-        document.addEventListener('DOMContentLoaded', () => {
-            if (window.initializeAdvancedFilters) {
-                initializeAdvancedFilters();
-            }
-        });
     </script>
 </body>
 </html>
