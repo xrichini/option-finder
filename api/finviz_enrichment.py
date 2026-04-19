@@ -244,7 +244,7 @@ def enrich_opportunities_with_insider_data(opportunities: list[dict]) -> list[di
             moneyness = opp.get("moneyness", "")
             moneyness_pct = opp.get("moneyness_pct", 0.0)
             moneyness_boost = 1.0
-            
+
             if moneyness == "ATM":
                 # ATM = optimal for gamma trades, highest quality whale activity
                 moneyness_boost = 1.05  # +5% score boost
@@ -263,10 +263,30 @@ def enrich_opportunities_with_insider_data(opportunities: list[dict]) -> list[di
                 opp["moneyness_quality"] = "low"
             else:
                 opp["moneyness_quality"] = "neutral"
-            
+
             # Apply moneyness boost to current score
             if "score" in opp and isinstance(opp["score"], (int, float)):
                 opp["score"] = round(opp["score"] * moneyness_boost, 2)
+
+            # ─── Phase 1: Fill Aggression / Conviction Buying ───
+            # If whale paid aggressively (at/near ask), it shows high conviction
+            fill_aggression = opp.get("fill_aggression", "normal")
+            fill_aggression_boost = 1.0
+            
+            if fill_aggression == "aggressive":
+                # Paying 80%+ through spread = high conviction, institutional execution
+                fill_aggression_boost = 1.03  # +3% score boost
+                opp["aggression_signal"] = "high_conviction"
+            elif fill_aggression == "patient":
+                # Accumulating quietly = could be bottom-fishing or distribution
+                fill_aggression_boost = 1.0  # Neutral
+                opp["aggression_signal"] = "accumulating"
+            else:
+                opp["aggression_signal"] = "normal"
+            
+            # Apply fill aggression boost to current score
+            if "score" in opp and isinstance(opp["score"], (int, float)):
+                opp["score"] = round(opp["score"] * fill_aggression_boost, 2)
 
             enriched.append(opp)
 

@@ -305,6 +305,10 @@ class OptionsOpportunity(BaseModel):
     net_flow_direction: str = (
         "neutral"  # 'bullish'|'bearish'|'neutral' (derniers prix vs mid)
     )
+    
+    # --- Phase 1: Fill Aggression (Bid-Ask Spread Aggression) ---
+    fill_aggression: str = "normal"  # 'aggressive'|'normal'|'patient'
+    fill_aggression_pct: float = 50.0  # 0-100%: how far through spread the last trade was
 
 
 class ErrorResponse(BaseModel):

@@ -511,6 +511,8 @@ class ScreeningService:
                     has_block_trade=flow_signals["block_trade"],
                     spread_compression_pct=flow_signals["spread_pct"],
                     net_flow_direction=flow_signals["flow_direction"],
+                    fill_aggression=flow_signals["fill_aggression"],
+                    fill_aggression_pct=flow_signals["fill_aggression_pct"],
                 )
                 opportunities.append(opportunity)
 
@@ -530,7 +532,9 @@ class ScreeningService:
         {
             'block_trade': bool,
             'spread_pct': float,
-            'flow_direction': str ('bullish'|'bearish'|'neutral')
+            'flow_direction': str ('bullish'|'bearish'|'neutral'),
+            'fill_aggression': str ('aggressive'|'normal'|'patient'),
+            'fill_aggression_pct': float
         }
         """
         try:
@@ -550,6 +554,30 @@ class ScreeningService:
                     round((ask - bid) / mid_price * 100, 2) if mid_price > 0 else 100
                 )
 
+            # --- Phase 1: Fill Aggression Detection ---
+            # Detects whether the whale paid aggressively (at ask) vs patient (at bid)
+            fill_aggression = "normal"
+            fill_aggression_pct = 50.0  # Default: at midpoint
+            
+            if last > 0 and bid > 0 and ask > 0:
+                mid_price = (bid + ask) / 2
+                # Calculate how far through the spread the last trade was
+                # 0% = at bid, 100% = at ask
+                if ask > bid:
+                    fill_aggression_pct = round(
+                        ((last - bid) / (ask - bid)) * 100, 1
+                    )
+                else:
+                    fill_aggression_pct = 50.0
+                
+                # Classify aggressiveness
+                if fill_aggression_pct >= 80:
+                    fill_aggression = "aggressive"  # Paying 80%+ through spread = conviction
+                elif fill_aggression_pct >= 50:
+                    fill_aggression = "normal"      # Around midpoint = normal
+                else:
+                    fill_aggression = "patient"     # Paying < 50% = accumulating quietly
+
             # Net Flow Indicator
             flow_direction = "neutral"
             if last > 0 and bid > 0 and ask > 0:
@@ -566,6 +594,8 @@ class ScreeningService:
                 "block_trade": block_trade,
                 "spread_pct": spread_pct,
                 "flow_direction": flow_direction,
+                "fill_aggression": fill_aggression,
+                "fill_aggression_pct": fill_aggression_pct,
             }
 
         except Exception as e:
@@ -574,6 +604,8 @@ class ScreeningService:
                 "block_trade": False,
                 "spread_pct": 100.0,
                 "flow_direction": "neutral",
+                "fill_aggression": "normal",
+                "fill_aggression_pct": 50.0,
             }
 
     def _calculate_whale_score(self, option: Dict[str, Any]) -> float:
