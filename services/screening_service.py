@@ -558,25 +558,25 @@ class ScreeningService:
             # Detects whether the whale paid aggressively (at ask) vs patient (at bid)
             fill_aggression = "normal"
             fill_aggression_pct = 50.0  # Default: at midpoint
-            
+
             if last > 0 and bid > 0 and ask > 0:
                 mid_price = (bid + ask) / 2
                 # Calculate how far through the spread the last trade was
                 # 0% = at bid, 100% = at ask
                 if ask > bid:
-                    fill_aggression_pct = round(
-                        ((last - bid) / (ask - bid)) * 100, 1
-                    )
+                    fill_aggression_pct = round(((last - bid) / (ask - bid)) * 100, 1)
                 else:
                     fill_aggression_pct = 50.0
-                
+
                 # Classify aggressiveness
                 if fill_aggression_pct >= 80:
-                    fill_aggression = "aggressive"  # Paying 80%+ through spread = conviction
+                    fill_aggression = (
+                        "aggressive"  # Paying 80%+ through spread = conviction
+                    )
                 elif fill_aggression_pct >= 50:
-                    fill_aggression = "normal"      # Around midpoint = normal
+                    fill_aggression = "normal"  # Around midpoint = normal
                 else:
-                    fill_aggression = "patient"     # Paying < 50% = accumulating quietly
+                    fill_aggression = "patient"  # Paying < 50% = accumulating quietly
 
             # Net Flow Indicator
             flow_direction = "neutral"

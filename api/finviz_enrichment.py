@@ -272,7 +272,7 @@ def enrich_opportunities_with_insider_data(opportunities: list[dict]) -> list[di
             # If whale paid aggressively (at/near ask), it shows high conviction
             fill_aggression = opp.get("fill_aggression", "normal")
             fill_aggression_boost = 1.0
-            
+
             if fill_aggression == "aggressive":
                 # Paying 80%+ through spread = high conviction, institutional execution
                 fill_aggression_boost = 1.03  # +3% score boost
@@ -283,10 +283,37 @@ def enrich_opportunities_with_insider_data(opportunities: list[dict]) -> list[di
                 opp["aggression_signal"] = "accumulating"
             else:
                 opp["aggression_signal"] = "normal"
-            
+
             # Apply fill aggression boost to current score
             if "score" in opp and isinstance(opp["score"], (int, float)):
                 opp["score"] = round(opp["score"] * fill_aggression_boost, 2)
+
+            # ─── Phase 1: Size Percentile / Volume Conviction ───
+            # Contracts with 30-day volume significantly above average = high interest
+            size_pct = opp.get("size_percentile", 0.0)
+            size_percentile_boost = 1.0
+            size_percentile_badge = "normal"
+
+            if size_pct >= 95.0:
+                # Top 1% by volume (2x+ 30-day average) = exceptional
+                size_percentile_boost = 1.05  # +5% boost
+                size_percentile_badge = "🟢🟢 Top 1%"
+            elif size_pct >= 80.0:
+                # Top 5% by volume (1.3x+ 30-day average) = notable
+                size_percentile_boost = 1.03  # +3% boost
+                size_percentile_badge = "🟢 Top 5%"
+            elif size_pct >= 75.0:
+                # Top 25% by volume (at/above 30-day average) = decent
+                size_percentile_boost = 1.01  # +1% boost
+                size_percentile_badge = "🟡 Top 25%"
+            else:
+                size_percentile_badge = "below_avg"
+
+            opp["size_percentile_badge"] = size_percentile_badge
+
+            # Apply size percentile boost to current score
+            if "score" in opp and isinstance(opp["score"], (int, float)):
+                opp["score"] = round(opp["score"] * size_percentile_boost, 2)
 
             enriched.append(opp)
 

@@ -298,6 +298,10 @@ class OptionsOpportunity(BaseModel):
     iv_percentile: float = 0.0  # IV Percentile 252j (0-100)
     oi_spike_ratio: float = 0.0  # OI aujourd'hui / avg OI 5j
     vol_trend_ratio: float = 0.0  # Vol aujourd'hui / avg Vol 5j
+    
+    # --- Phase 1: Size Percentile Tracking (30-day volume) ---
+    size_percentile: float = 0.0  # 0-100: percentile ranking vs 30-day avg
+    volume_30d_avg: float = 0.0  # 30-day average volume for contract
 
     # --- Signaux d'order flow ---
     has_block_trade: bool = False  # Volume >= 100 contracts
@@ -305,10 +309,12 @@ class OptionsOpportunity(BaseModel):
     net_flow_direction: str = (
         "neutral"  # 'bullish'|'bearish'|'neutral' (derniers prix vs mid)
     )
-    
+
     # --- Phase 1: Fill Aggression (Bid-Ask Spread Aggression) ---
     fill_aggression: str = "normal"  # 'aggressive'|'normal'|'patient'
-    fill_aggression_pct: float = 50.0  # 0-100%: how far through spread the last trade was
+    fill_aggression_pct: float = (
+        50.0  # 0-100%: how far through spread the last trade was
+    )
 
 
 class ErrorResponse(BaseModel):

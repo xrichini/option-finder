@@ -61,6 +61,8 @@ class HistoryService:
                 "implied_volatility": "REAL DEFAULT 0",
                 "strike": "REAL DEFAULT 0",
                 "option_type": "TEXT DEFAULT ''",
+                "volume_30d_avg": "REAL DEFAULT 0",  # Phase 1: 30-day volume average
+                "size_percentile": "REAL DEFAULT 0",  # Phase 1: top 1%/5%/25%
             }
             for col, col_def in new_cols.items():
                 if col not in existing:
@@ -345,6 +347,69 @@ class HistoryService:
         finally:
             con.close()
 
+    def get_size_percentile(
+        self, option_symbol: str, current_vol: int, window_days: int = 30
+    ) -> Tuple[float, float]:
+        """
+        Phase 1: Calculate size percentile for current volume.
+        
+        Returns:
+            (size_percentile, vol_30d_avg)
+            - size_percentile: 0-100, where 100 = top 1% of contracts by volume
+            - vol_30d_avg: 30-day average volume
+        
+        Classification:
+            > 2.0x (top 1%): 95+ percentile
+            > 1.3x (top 5%): 80+ percentile  
+            > 1.0x (top 25%): 75+ percentile
+            < 1.0x: < 75 percentile
+        """
+        if not current_vol:
+            return (0.0, 0.0)
+        
+        con = self._open()
+        if con is None:
+            return (0.0, 0.0)
+        
+        try:
+            cutoff = (datetime.now() - timedelta(days=window_days)).strftime("%Y-%m-%d")
+            
+            # Get 30-day average volume for this contract
+            row = con.execute(
+                """
+                SELECT AVG(volume_1d) FROM option_history
+                WHERE option_symbol = ? AND scan_date >= ? AND volume_1d > 0
+                """,
+                (option_symbol, cutoff),
+            ).fetchone()
+            
+            vol_30d_avg = row[0] if row and row[0] else 0.0
+            
+            if vol_30d_avg <= 0:
+                return (0.0, 0.0)
+            
+            # Calculate percentile: how much current_vol is vs 30-day average
+            vol_ratio = current_vol / vol_30d_avg
+            
+            # Map ratio to percentile (0-100)
+            if vol_ratio >= 2.0:
+                size_percentile = 95.0  # Top 1%
+            elif vol_ratio >= 1.3:
+                size_percentile = 80.0  # Top 5%
+            elif vol_ratio >= 1.0:
+                size_percentile = 75.0  # Top 25%
+            else:
+                # Below average — scale down from 0-75
+                size_percentile = max(0.0, (vol_ratio / 1.0) * 75.0)
+            
+            return (round(size_percentile, 1), round(vol_30d_avg, 0))
+            
+        except Exception as e:
+            logger.debug(f"get_size_percentile({option_symbol}): {e}")
+            return (0.0, 0.0)
+        finally:
+            con.close()
+
     def get_yesterday_oi(self, option_symbol: str) -> Optional[float]:
         """
         Récupère l'Open Interest d'hier pour une option.
@@ -420,7 +485,7 @@ class HistoryService:
                 else:
                     iv_cache[und] = (0.0, 0.0)
 
-        # Enrichissement contrat par contrat (OI spike + vol trend)
+        # Enrichissement contrat par contrat (OI spike + vol trend + size percentile)
         for opp in opportunities:
             try:
                 und = _get(opp, "underlying_symbol", "")
@@ -433,6 +498,12 @@ class HistoryService:
                 _set(opp, "iv_percentile", iv_pct)
                 _set(opp, "oi_spike_ratio", self.get_oi_spike(sym, oi))
                 _set(opp, "vol_trend_ratio", self.get_vol_trend(sym, vol))
+                
+                # Phase 1: Size percentile tracking
+                size_pct, vol_30d_avg = self.get_size_percentile(sym, vol)
+                _set(opp, "size_percentile", size_pct)
+                _set(opp, "volume_30d_avg", vol_30d_avg)
+                
             except Exception as e:
                 logger.debug(f"enrich_with_history item: {e}")
 
