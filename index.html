@@ -922,10 +922,16 @@
             const beta          = opt.beta != null ? Number(opt.beta) : null;
             const capLabel      = opt.cap_label || '';
             const peRatio       = opt.pe_ratio  != null ? Number(opt.pe_ratio) : null;
-            const insiderIcon   = opt.insider_icon   || '⚪';
-            const insiderSignal = opt.insider_signal || 'neutral';
+            
+            // NEW: Insider enrichment from finviz-mcp (primary)
+            const insiderSentiment = opt.insider_sentiment           || 'neutral';
+            const insiderStrength  = opt.insider_signal_strength     || 'none';
+            const insiderBoost     = Number(opt.insider_boost || 1.0);
+            
+            // FALLBACK: Old FMP insider fields (deprecated, keep for compatibility)
             const insiderBuys   = opt.insider_buys   || 0;
             const insiderSells  = opt.insider_sells  || 0;
+            const insiderIcon   = opt.insider_icon   || '⚪';
 
             const betaColor = beta == null ? '#4a5568'
                 : (beta >= 2 ? '#e53e3e' : (beta >= 1.3 ? '#f6ad55' : '#a0aec0'));
@@ -933,8 +939,15 @@
                 ? `<span style="color:${betaColor};font-weight:600" title="${capLabel}${peRatio ? ' · PE\u00a0' + peRatio : ''}">${beta.toFixed(2)}</span>`
                 : '<span style="color:#4a5568">--</span>';
 
-            const insiderTitle = `${insiderBuys}B\u00a0/\u00a0${insiderSells}S (30j)`;
-            const insiderHtml  = `<span title="${insiderTitle}" style="cursor:default;font-size:1.1em">${insiderIcon}</span>`;
+            // Build insider HTML with sentiment & boost
+            const sentimentEmoji = insiderSentiment === 'bullish' ? '🟢' 
+                                 : insiderSentiment === 'bearish' ? '🔴' 
+                                 : '⚪';
+            const boostPct = ((insiderBoost - 1.0) * 100).toFixed(0);
+            const boostBadge = insiderBoost > 1.01 ? ` +${boostPct}%` : '';
+            const activityStr = insiderBuys > 0 || insiderSells > 0 ? ` · ${insiderBuys}B/${insiderSells}S (30j)` : '';
+            const insiderTitle = `Sentiment: ${insiderSentiment}${boostBadge}${activityStr}`;
+            const insiderHtml  = `<span title="${insiderTitle}" style="cursor:default;font-size:1.1em;font-weight:600">${sentimentEmoji}</span>`;
 
             // Earnings
             const earningsSoon   = opt.earnings_soon || false;
