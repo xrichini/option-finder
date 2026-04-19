@@ -480,6 +480,8 @@
         let isLoading = false;
         let tickerSearch = '';          // live ticker text filter
         let _sparklineCache = {};
+        let _flowTrendCache = {};       // Order flow strength trends (7d)
+        let _crushTrendCache = {};      // Crush probability trends (7d)
 
         // ──── Load pre-computed scan from GitHub Pages ────
         async function loadLatestScan() {
@@ -929,6 +931,9 @@
             });
 
             body.innerHTML = sorted.map(opt => createFlowRow(opt)).join('');
+            
+            // Fetch trend data asynchronously for sparklines
+            _fetchTrendData();
         }
 
         function sortVal(opt, key) {
@@ -972,6 +977,114 @@
                    `<circle cx="${lx}" cy="${ly}" r="2" fill="${color}"/>` +
                    `</svg>`;
         }
+
+        function _makeFlowTrendSparkline(values) {
+            if (!values || values.length < 2) return '';
+            const W = 36, H = 12, PAD = 1;
+            const min  = Math.min(...values);
+            const max  = Math.max(...values);
+            const rng  = max - min || 1;
+            const pts  = values.map((v, i) => {
+                const x = PAD + (i / (values.length - 1)) * (W - 2 * PAD);
+                const y = (H - PAD) - ((v - min) / rng) * (H - 2 * PAD);
+                return x.toFixed(1) + ',' + y.toFixed(1);
+            }).join(' ');
+            const last  = values[values.length - 1];
+            const first = values[0];
+            const trend = last - first;
+            const color = trend >  5 ? '#22a84a'
+                        : trend < -5 ? '#dc2626'
+                        : '#9ca3af';
+            return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="margin-left:2px">` +
+                   `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1" stroke-linejoin="round"/>` +
+                   `</svg>`;
+        }
+
+        function _makeCrushTrendSparkline(values) {
+            if (!values || values.length < 2) return '';
+            const W = 36, H = 12, PAD = 1;
+            const min  = Math.min(...values);
+            const max  = Math.max(...values);
+            const rng  = max - min || 1;
+            const pts  = values.map((v, i) => {
+                const x = PAD + (i / (values.length - 1)) * (W - 2 * PAD);
+                const y = (H - PAD) - ((v - min) / rng) * (H - 2 * PAD);
+                return x.toFixed(1) + ',' + y.toFixed(1);
+            }).join(' ');
+            const last  = values[values.length - 1];
+            const first = values[0];
+            const trend = last - first;
+            const color = trend >  5 ? '#dc2626'
+                        : trend < -5 ? '#22a84a'
+                        : '#9ca3af';
+            return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="margin-left:2px">` +
+                   `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1" stroke-linejoin="round"/>` +
+                   `</svg>`;
+        }
+
+        async function _fetchTrendData() {
+            if (!filteredOptions || filteredOptions.length === 0) return;
+            const symbols = filteredOptions.map(o => o.option_symbol).filter(s => s);
+            if (symbols.length === 0) return;
+            try {
+                const flowRes = await fetch(`/api/hybrid/trends/order-flow?symbols=${symbols.join(',')}`);
+                if (flowRes.ok) {
+                    const flowData = await flowRes.json();
+                    if (flowData.trends) _flowTrendCache = flowData.trends;
+                }
+                const crushRes = await fetch(`/api/hybrid/trends/crush-probability?symbols=${symbols.join(',')}`);
+                if (crushRes.ok) {
+                    const crushData = await crushRes.json();
+                    if (crushData.trends) _crushTrendCache = crushData.trends;
+                }
+                // Re-render badges with sparklines after data arrives
+                _updateSparklinesBadges();
+            } catch(e) {
+                console.debug('Trend data fetch error:', e);
+            }
+        }
+
+        function _updateSparklinesBadges() {
+            // Update sparklines in the rendered table after trend data arrives
+            const body = document.getElementById('flowTableBody');
+            if (!body) return;
+            const rows = body.querySelectorAll('tr');
+            rows.forEach((row, idx) => {
+                if (idx >= filteredOptions.length) return;
+                const opt = filteredOptions[idx];
+                if (!opt.option_symbol) return;
+                const cells = row.querySelectorAll('td');
+                
+                // Find OrdFlow and CrushProb cells (counting from the end)
+                // Score is at cells.length - 1, CrushProb at -2, OrdFlow at -3
+                const ordFlowCellIdx = cells.length - 3;
+                const crushProbCellIdx = cells.length - 2;
+                
+                if (ordFlowCellIdx >= 0 && ordFlowCellIdx < cells.length) {
+                    const ordFlowCell = cells[ordFlowCellIdx];
+                    if (_flowTrendCache[opt.option_symbol]) {\n                        const flowSparkline = _makeFlowTrendSparkline(_flowTrendCache[opt.option_symbol]);\n                        if (!ordFlowCell.innerHTML.includes('svg')) {\n                            ordFlowCell.innerHTML += flowSparkline;\n                        }\n                    }\n                }\n                \n                if (crushProbCellIdx >= 0 && crushProbCellIdx < cells.length) {\n                    const crushProbCell = cells[crushProbCellIdx];\n                    if (_crushTrendCache[opt.option_symbol]) {\n                        const crushSparkline = _makeCrushTrendSparkline(_crushTrendCache[opt.option_symbol]);\n                        if (!crushProbCell.innerHTML.includes('svg')) {\n                            crushProbCell.innerHTML += crushSparkline;\n                        }\n                    }\n                }\n            });\n                console.debug('Trend data fetch error:', e);
+            }
+        }
+
+        function _updateSparklinesBadges() {
+            // Update sparklines in the rendered table after trend data arrives
+            const body = document.getElementById('flowTableBody');
+            if (!body) return;
+            const rows = body.querySelectorAll('tr');
+            rows.forEach((row, idx) => {
+                if (idx >= filteredOptions.length) return;
+                const opt = filteredOptions[idx];
+                if (!opt.option_symbol) return;
+                const cells = row.querySelectorAll('td');
+                
+                // Find OrdFlow and CrushProb cells (counting from the end)
+                // Score is at cells.length - 1, CrushProb at -2, OrdFlow at -3
+                const ordFlowCellIdx = cells.length - 3;
+                const crushProbCellIdx = cells.length - 2;
+                
+                if (ordFlowCellIdx >= 0 && ordFlowCellIdx < cells.length) {
+                    const ordFlowCell = cells[ordFlowCellIdx];
+                    if (_flowTrendCache[opt.option_symbol]) {\n                        const flowSparkline = _makeFlowTrendSparkline(_flowTrendCache[opt.option_symbol]);\n                        if (!ordFlowCell.innerHTML.includes('svg')) {\n                            ordFlowCell.innerHTML += flowSparkline;\n                        }\n                    }\n                }\n                \n                if (crushProbCellIdx >= 0 && crushProbCellIdx < cells.length) {\n                    const crushProbCell = cells[crushProbCellIdx];\n                    if (_crushTrendCache[opt.option_symbol]) {\n                        const crushSparkline = _makeCrushTrendSparkline(_crushTrendCache[opt.option_symbol]);\n                        if (!crushProbCell.innerHTML.includes('svg')) {\n                            crushProbCell.innerHTML += crushSparkline;\n                        }\n                    }\n                }\n            });\n        }
 
         function createFlowRow(opt) {
             const type = (opt.option_type || '').toLowerCase();
@@ -1082,10 +1195,11 @@
                 fillVelBadgeHtml = '<span style="background:#cbd5e0;color:#000;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">LO</span>';
             }
 
-            // Phase 3: Order Flow Direction Badge
+            // Phase 3: Order Flow Direction Badge + Sparkline
             const flowStrength = Number(opt.order_flow_strength || 50);
             const flowDir = opt.order_flow_direction || 'neutral';
             let flowBadgeHtml = '<span style="color:#4a5568">--</span>';
+            let flowSparkline = '';
             if (flowDir === 'strong_bullish') {
                 flowBadgeHtml = '<span style="background:#22543d;color:#9ae6b4;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">💪 SB</span>';
             } else if (flowDir === 'bullish') {
@@ -1095,11 +1209,16 @@
             } else if (flowDir === 'bearish') {
                 flowBadgeHtml = '<span style="background:#5a2a2a;color:#feb2b2;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">📉 R</span>';
             }
+            if (_flowTrendCache[optSym]) {
+                flowSparkline = _makeFlowTrendSparkline(_flowTrendCache[optSym]);
+            }
+            const flowBadgeWithTrend = flowBadgeHtml + flowSparkline;
 
-            // Phase 3: Crush Probability Badge
+            // Phase 3: Crush Probability Badge + Sparkline
             const crushProb = Number(opt.crush_probability || 0);
             const crushCat = opt.crush_catalyst || 'none';
             let crushProbBadgeHtml = '<span style="color:#4a5568">--</span>';
+            let crushSparkline = '';
             if (crushCat === 'earnings') {
                 crushProbBadgeHtml = '<span style="background:#d69e2e;color:#fff;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">⚡ ERN</span>';
             } else if (crushProb >= 75) {
@@ -1111,6 +1230,10 @@
             } else if (crushProb > 0) {
                 crushProbBadgeHtml = '<span style="background:#68d391;color:#000;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">🟢 ' + crushProb.toFixed(0) + '%</span>';
             }
+            if (_crushTrendCache[optSym]) {
+                crushSparkline = _makeCrushTrendSparkline(_crushTrendCache[optSym]);
+            }
+            const crushBadgeWithTrend = crushProbBadgeHtml + crushSparkline;
 
             // Timestamp
             const ts = opt.timestamp ? new Date(opt.timestamp) : null;
@@ -1194,8 +1317,8 @@
                 <td style="text-align:center">${sizeBadgeHtml}</td>
                 <td style="text-align:center" title="Current IV / 52w Avg (${ivCrush.toFixed(2)}x)">${ivCrushBadgeHtml}</td>
                 <td style="text-align:center" title="${fillVel.toFixed(0)} contracts/min">${fillVelBadgeHtml}</td>
-                <td style="text-align:center" title="Order Flow: ${flowDir} (${flowStrength.toFixed(0)})">${flowBadgeHtml}</td>
-                <td style="text-align:center" title="IV Crush Probability: ${crushProb.toFixed(1)}% (${crushCat})">${crushProbBadgeHtml}</td>
+                <td style="text-align:center;display:flex;align-items:center;justify-content:center;gap:3px" title="Order Flow: ${flowDir} (${flowStrength.toFixed(0)})">${flowBadgeWithTrend}</td>
+                <td style="text-align:center;display:flex;align-items:center;justify-content:center;gap:3px" title="IV Crush Probability: ${crushProb.toFixed(1)}% (${crushCat})">${crushBadgeWithTrend}</td>
                 <td data-field="score">${scoreCell}</td>
             </tr>`;
         }
