@@ -363,6 +363,79 @@ def enrich_opportunities_with_insider_data(opportunities: list[dict]) -> list[di
             if "score" in opp and isinstance(opp["score"], (int, float)):
                 opp["score"] = round(opp["score"] * fill_vel_boost, 2)
 
+            # ─── Phase 3: Order Flow Strength / Institutional Conviction ───
+            # Analyze accumulation vs distribution patterns
+            flow_strength = opp.get("order_flow_strength", 50.0)
+            flow_direction = opp.get("order_flow_direction", "neutral")
+            flow_boost = 1.0
+            flow_badge = "neutral"
+
+            if flow_direction == "strong_bullish":
+                # Aggressive institutional accumulation with expanding OI
+                flow_boost = 1.06  # +6% boost (highest signal)
+                flow_badge = "💪 Strong Bull"
+            elif flow_direction == "bullish":
+                # Positive flow: accumulation or steady buying
+                flow_boost = 1.03  # +3% boost
+                flow_badge = "📈 Bullish"
+            elif flow_direction == "strong_bearish":
+                # Aggressive distribution or liquidation
+                flow_boost = 0.94  # -6% penalty
+                flow_badge = "⚠️ Strong Bear"
+            elif flow_direction == "bearish":
+                # Negative flow: distribution detected
+                flow_boost = 0.97  # -3% penalty
+                flow_badge = "📉 Bearish"
+            else:
+                flow_badge = "neutral"
+
+            opp["order_flow_badge"] = flow_badge
+
+            # Apply order flow boost to current score
+            if "score" in opp and isinstance(opp["score"], (int, float)):
+                opp["score"] = round(opp["score"] * flow_boost, 2)
+
+            # ─── Phase 3: Volatility Smile & Crush Assessment ───
+            # Detect if IV is elevated and smile pattern suggests reversal
+            smile_width = opp.get("volatility_smile", 0.0)
+            crush_prob = opp.get("crush_probability", 0.0)
+            crush_catalyst = opp.get("crush_catalyst", "none")
+            crush_boost = 1.0
+            crush_badge = "normal"
+
+            if crush_catalyst == "earnings":
+                # Earnings catalyst = guaranteed IV crush post-earnings
+                if crush_prob >= 75:
+                    crush_boost = 0.90  # -10% for long calls, neutral for puts
+                    crush_badge = "⚡ EARNINGS"
+                else:
+                    crush_boost = 0.95  # -5% hedge
+                    crush_badge = "⚡ Earnings"
+            elif crush_prob >= 75:
+                # Very high crush probability (high smile + high IV)
+                crush_boost = 0.93  # -7% penalty for long options
+                crush_badge = "🔴 Extreme Crush Risk"
+            elif crush_prob >= 50:
+                # Moderate to high crush risk
+                crush_boost = 0.96  # -4% penalty
+                crush_badge = "🟠 High Crush Risk"
+            elif crush_prob >= 25:
+                # Noticeable crush risk
+                crush_boost = 0.98  # -2% penalty
+                crush_badge = "🟡 Moderate Crush"
+            else:
+                crush_badge = "🟢 Low Risk"
+
+            opp["iv_crush_badge"] = crush_badge
+
+            # Apply crush probability penalty to current score
+            if "score" in opp and isinstance(opp["score"], (int, float)):
+                opp["score"] = round(opp["score"] * crush_boost, 2)
+
+            # Cap score at 100
+            if "score" in opp and isinstance(opp["score"], (int, float)):
+                opp["score"] = min(100.0, max(0.0, opp["score"]))
+
             enriched.append(opp)
 
         finviz_covered = sum(1 for o in enriched if o.get("insider_source") == "finviz")

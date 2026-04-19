@@ -773,6 +773,11 @@
                 ['IVCrushRisk', o => Number(o.iv_crush_risk || 0).toFixed(2)],
                 ['FillVelocity',o => Number(o.fill_velocity || 0).toFixed(0)],
                 ['FillAggression', o => o.fill_aggression || ''],
+                ['OrderFlowStrength', o => Number(o.order_flow_strength || 0).toFixed(1)],
+                ['OrderFlowDirection', o => o.order_flow_direction || ''],
+                ['VolatilitySmile', o => Number(o.volatility_smile || 0).toFixed(1)],
+                ['CrushProbability', o => Number(o.crush_probability || 0).toFixed(1)],
+                ['CrushCatalyst', o => o.crush_catalyst || ''],
                 ['Score',       o => Number(o.whale_score || o.hybrid_score || 0).toFixed(1)],
                 ['Symbol_OCC',  o => o.option_symbol || ''],
             ];
@@ -886,6 +891,8 @@
             { key: '_size_pct',   label: 'Size%',      sortKey: 'size_percentile',  title: '30-day Volume Percentile' },
             { key: '_iv_crush',   label: 'IVCrush',    sortKey: 'iv_crush_risk',    title: 'IV Crush Risk' },
             { key: '_fill_vel',   label: 'FillVel',    sortKey: 'fill_velocity',    title: 'Fill Velocity (contracts/min)' },
+            { key: '_order_flow', label: 'OrdFlow',    sortKey: 'order_flow_strength', title: 'Institutional Order Flow Direction' },
+            { key: '_crush_prob', label: 'CrushProb',  sortKey: 'crush_probability',   title: 'IV Crush Probability' },
             { key: '_score',      label: 'Score',      sortKey: 'whale_score' },
         ];
 
@@ -1075,6 +1082,36 @@
                 fillVelBadgeHtml = '<span style="background:#cbd5e0;color:#000;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">LO</span>';
             }
 
+            // Phase 3: Order Flow Direction Badge
+            const flowStrength = Number(opt.order_flow_strength || 50);
+            const flowDir = opt.order_flow_direction || 'neutral';
+            let flowBadgeHtml = '<span style="color:#4a5568">--</span>';
+            if (flowDir === 'strong_bullish') {
+                flowBadgeHtml = '<span style="background:#22543d;color:#9ae6b4;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">💪 SB</span>';
+            } else if (flowDir === 'bullish') {
+                flowBadgeHtml = '<span style="background:#1e3a1f;color:#68d391;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">📈 B</span>';
+            } else if (flowDir === 'strong_bearish') {
+                flowBadgeHtml = '<span style="background:#742a2a;color:#fc8181;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">⚠️ SR</span>';
+            } else if (flowDir === 'bearish') {
+                flowBadgeHtml = '<span style="background:#5a2a2a;color:#feb2b2;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">📉 R</span>';
+            }
+
+            // Phase 3: Crush Probability Badge
+            const crushProb = Number(opt.crush_probability || 0);
+            const crushCat = opt.crush_catalyst || 'none';
+            let crushProbBadgeHtml = '<span style="color:#4a5568">--</span>';
+            if (crushCat === 'earnings') {
+                crushProbBadgeHtml = '<span style="background:#d69e2e;color:#fff;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">⚡ ERN</span>';
+            } else if (crushProb >= 75) {
+                crushProbBadgeHtml = '<span style="background:#c53030;color:#fff;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">🔴 ' + crushProb.toFixed(0) + '%</span>';
+            } else if (crushProb >= 50) {
+                crushProbBadgeHtml = '<span style="background:#ed8936;color:#fff;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">🟠 ' + crushProb.toFixed(0) + '%</span>';
+            } else if (crushProb >= 25) {
+                crushProbBadgeHtml = '<span style="background:#ecc94b;color:#000;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">🟡 ' + crushProb.toFixed(0) + '%</span>';
+            } else if (crushProb > 0) {
+                crushProbBadgeHtml = '<span style="background:#68d391;color:#000;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">🟢 ' + crushProb.toFixed(0) + '%</span>';
+            }
+
             // Timestamp
             const ts = opt.timestamp ? new Date(opt.timestamp) : null;
             const timeStr = ts ? ts.toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false}) : '--:--:--';
@@ -1157,6 +1194,8 @@
                 <td style="text-align:center">${sizeBadgeHtml}</td>
                 <td style="text-align:center" title="Current IV / 52w Avg (${ivCrush.toFixed(2)}x)">${ivCrushBadgeHtml}</td>
                 <td style="text-align:center" title="${fillVel.toFixed(0)} contracts/min">${fillVelBadgeHtml}</td>
+                <td style="text-align:center" title="Order Flow: ${flowDir} (${flowStrength.toFixed(0)})">${flowBadgeHtml}</td>
+                <td style="text-align:center" title="IV Crush Probability: ${crushProb.toFixed(1)}% (${crushCat})">${crushProbBadgeHtml}</td>
                 <td data-field="score">${scoreCell}</td>
             </tr>`;
         }

@@ -65,6 +65,8 @@ class HistoryService:
                 "size_percentile": "REAL DEFAULT 0",  # Phase 1: top 1%/5%/25%
                 "fill_velocity": "REAL DEFAULT 0",  # Phase 2: contracts/minute
                 "iv_52w_avg": "REAL DEFAULT 0",  # Phase 2: 52-week IV average
+                "order_flow_strength": "REAL DEFAULT 50",  # Phase 3: 0-100 bullish conviction
+                "volatility_smile_width": "REAL DEFAULT 0",  # Phase 3: IV variance across strikes
             }
             for col, col_def in new_cols.items():
                 if col not in existing:
@@ -527,6 +529,166 @@ class HistoryService:
         finally:
             con.close()
 
+    def get_order_flow_strength(
+        self,
+        option_symbol: str,
+        current_vol: int,
+        current_oi: int,
+        window_days: int = 30,
+    ) -> Tuple[float, str]:
+        """
+        Phase 3: Calculate order flow strength (institutional conviction).
+
+        Returns:
+            (order_flow_strength, order_flow_direction)
+            - order_flow_strength: 0-100 (>50=bullish)
+            - order_flow_direction: 'strong_bullish'|'bullish'|'neutral'|'bearish'|'strong_bearish'
+
+        Analysis:
+            - Volume trending upward = institutional accumulation (bullish)
+            - OI expanding with rising volume = conviction (building position)
+            - OI contracting with volume = distribution (closing position)
+        """
+        if not option_symbol or (current_vol <= 0 and current_oi <= 0):
+            return (50.0, "neutral")
+
+        con = self._open()
+        if con is None:
+            return (50.0, "neutral")
+
+        try:
+            cutoff = (datetime.now() - timedelta(days=window_days)).strftime("%Y-%m-%d")
+
+            # Get historical volume and OI trend
+            history = con.execute(
+                """
+                SELECT volume_1d, open_interest, scan_date FROM option_history
+                WHERE option_symbol = ? AND scan_date >= ? 
+                ORDER BY scan_date ASC
+                """,
+                (option_symbol, cutoff),
+            ).fetchall()
+
+            if not history or len(history) < 3:
+                return (50.0, "neutral")
+
+            # Calculate trend: recent vs early
+            recent_vol = sum(row[0] for row in history[-5:]) / max(1, len(history[-5:]))
+            early_vol = sum(row[0] for row in history[:5]) / max(1, len(history[:5]))
+            vol_trend = (recent_vol - early_vol) / max(1, early_vol)
+
+            recent_oi = sum(row[1] for row in history[-5:]) / max(1, len(history[-5:]))
+            early_oi = sum(row[1] for row in history[:5]) / max(1, len(history[:5]))
+            oi_trend = (recent_oi - early_oi) / max(1, early_oi)
+
+            # Volume/OI expansion:
+            # - Vol up, OI up = accumulation (bullish)
+            # - Vol up, OI down = liquidation (bearish)
+            # - Vol down, OI up = quiet buying (bullish)
+            # - Vol down, OI down = quiet selling (bearish)
+
+            vol_score = min(100, max(0, (vol_trend * 100) + 50))  # 0-100
+            oi_score = min(100, max(0, (oi_trend * 100) + 50))  # 0-100
+            current_score = vol_score * 0.6 + oi_score * 0.4  # Weight vol higher
+
+            # Classify direction
+            if current_score >= 75:
+                direction = "strong_bullish"
+            elif current_score >= 60:
+                direction = "bullish"
+            elif current_score <= 25:
+                direction = "strong_bearish"
+            elif current_score <= 40:
+                direction = "bearish"
+            else:
+                direction = "neutral"
+
+            return (round(current_score, 1), direction)
+
+        except Exception as e:
+            logger.debug(f"get_order_flow_strength({option_symbol}): {e}")
+            return (50.0, "neutral")
+        finally:
+            con.close()
+
+    def get_volatility_smile_width(
+        self, underlying_symbol: str, current_iv: float, window_days: int = 14
+    ) -> Tuple[float, float]:
+        """
+        Phase 3: Calculate volatility smile width (IV dispersion across strikes).
+
+        Returns:
+            (smile_width, crush_probability)
+            - smile_width: 0-100 (std dev of IV across strikes, normalized)
+            - crush_probability: 0-100 (likelihood of mean reversion)
+
+        Analysis:
+            - High IV variance across strikes = smile detected (volatility event priced in)
+            - This suggests IV may compress back to normal (crushing)
+            - Correlated with earnings or uncertainty events
+        """
+        if not underlying_symbol or current_iv <= 0:
+            return (0.0, 0.0)
+
+        con = self._open()
+        if con is None:
+            return (0.0, 0.0)
+
+        try:
+            cutoff = (datetime.now() - timedelta(days=window_days)).strftime("%Y-%m-%d")
+
+            # Get all IVs for all strikes of this underlying in recent period
+            rows = con.execute(
+                """
+                SELECT implied_volatility, strike FROM option_history
+                WHERE underlying = ? AND scan_date >= ? AND implied_volatility > 0
+                ORDER BY scan_date DESC
+                LIMIT 500
+                """,
+                (underlying_symbol, cutoff),
+            ).fetchall()
+
+            if not rows or len(rows) < 5:
+                return (0.0, 0.0)
+
+            # Extract IVs, calculate mean and std dev
+            ivs = [float(row[0]) for row in rows if row[0] > 0]
+            if len(ivs) < 5:
+                return (0.0, 0.0)
+
+            mean_iv = sum(ivs) / len(ivs)
+            variance = sum((iv - mean_iv) ** 2 for iv in ivs) / len(ivs)
+            std_dev_iv = variance**0.5
+
+            # Normalize smile width to 0-100 scale
+            # Assume typical std dev is 5% IV points, extreme is 20%
+            smile_width = (
+                min(100, (std_dev_iv / 5.0) * 33.33) if std_dev_iv > 0 else 0.0
+            )
+
+            # Crush probability: if current IV is high relative to mean
+            # and smile is present, crush is likely
+            iv_ratio = current_iv / mean_iv if mean_iv > 0 else 1.0
+
+            # High IV + wide smile = high crush risk
+            crush_prob = 0.0
+            if iv_ratio >= 1.5:
+                crush_prob = min(100, 50 + (smile_width * 0.5))  # 50-100
+            elif iv_ratio >= 1.3:
+                crush_prob = min(100, 35 + (smile_width * 0.3))  # 35-65
+            elif iv_ratio >= 1.1:
+                crush_prob = min(100, 20 + (smile_width * 0.2))  # 20-40
+            else:
+                crush_prob = smile_width * 0.15  # 0-15
+
+            return (round(smile_width, 1), round(crush_prob, 1))
+
+        except Exception as e:
+            logger.debug(f"get_volatility_smile_width({underlying_symbol}): {e}")
+            return (0.0, 0.0)
+        finally:
+            con.close()
+
     def get_yesterday_oi(self, option_symbol: str) -> Optional[float]:
         """
         Récupère l'Open Interest d'hier pour une option.
@@ -633,6 +795,25 @@ class HistoryService:
                 fill_vel, vel_signal = self.get_fill_velocity_metric(sym)
                 _set(opp, "fill_velocity", fill_vel)
                 _set(opp, "fill_velocity_signal", vel_signal)
+
+                # Phase 3: Order flow strength & volatility smile
+                flow_strength, flow_direction = self.get_order_flow_strength(
+                    sym, vol, oi
+                )
+                _set(opp, "order_flow_strength", flow_strength)
+                _set(opp, "order_flow_direction", flow_direction)
+
+                smile_width, crush_prob = self.get_volatility_smile_width(und, iv)
+                _set(opp, "volatility_smile", smile_width)
+                _set(opp, "crush_probability", crush_prob)
+
+                # Detect crush catalyst
+                crush_catalyst = "none"
+                if opp.get("earnings_soon"):
+                    crush_catalyst = "earnings"
+                elif crush_prob >= 60:
+                    crush_catalyst = "volatility_event"
+                _set(opp, "crush_catalyst", crush_catalyst)
 
             except Exception as e:
                 logger.debug(f"enrich_with_history item: {e}")

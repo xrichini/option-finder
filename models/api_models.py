@@ -322,6 +322,17 @@ class OptionsOpportunity(BaseModel):
         50.0  # 0-100%: how far through spread the last trade was
     )
 
+    # --- Phase 3: Advanced Order Flow & Volatility Analysis ---
+    order_flow_strength: float = (
+        0.0  # 0-100: institutional flow conviction (bullish>50)
+    )
+    order_flow_direction: str = (
+        "neutral"  # 'strong_bullish'|'bullish'|'neutral'|'bearish'|'strong_bearish'
+    )
+    volatility_smile: float = 0.0  # IV spread across strikes (higher = smile detected)
+    crush_probability: float = 0.0  # 0-100: probability of IV compression
+    crush_catalyst: str = "none"  # 'earnings'|'earnings_soon'|'volatility_event'|'none'
+
 
 class ErrorResponse(BaseModel):
     """Réponse d'erreur standardisée"""
