@@ -1040,7 +1040,9 @@
                 // Re-render badges with sparklines after data arrives
                 _updateSparklinesBadges();
             } catch(e) {
-
+                console.debug('Trend data fetch error:', e);
+            }
+        }
 
         function _updateSparklinesBadges() {
             // Update sparklines in the rendered table after trend data arrives
