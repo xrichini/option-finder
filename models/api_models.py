@@ -298,10 +298,16 @@ class OptionsOpportunity(BaseModel):
     iv_percentile: float = 0.0  # IV Percentile 252j (0-100)
     oi_spike_ratio: float = 0.0  # OI aujourd'hui / avg OI 5j
     vol_trend_ratio: float = 0.0  # Vol aujourd'hui / avg Vol 5j
-    
+
     # --- Phase 1: Size Percentile Tracking (30-day volume) ---
     size_percentile: float = 0.0  # 0-100: percentile ranking vs 30-day avg
     volume_30d_avg: float = 0.0  # 30-day average volume for contract
+
+    # --- Phase 2: Fill Velocity & IV Crush Risk ---
+    fill_velocity: float = 0.0  # contracts/minute during market hours
+    fill_velocity_signal: str = "normal"  # 'high_velocity'|'normal'|'low_velocity'
+    iv_crush_risk: float = 0.0  # current_iv / 52w_avg_iv ratio
+    iv_crush_signal: str = "normal"  # 'high_risk'|'normal'|'low_risk'
 
     # --- Signaux d'order flow ---
     has_block_trade: bool = False  # Volume >= 100 contracts

@@ -315,6 +315,54 @@ def enrich_opportunities_with_insider_data(opportunities: list[dict]) -> list[di
             if "score" in opp and isinstance(opp["score"], (int, float)):
                 opp["score"] = round(opp["score"] * size_percentile_boost, 2)
 
+            # ─── Phase 2: IV Crush Risk / Volatility Compression ───
+            # High IV crush risk = IV likely to compress (mean reversion to lower levels)
+            # This typically happens post-earnings or after volatility events
+            iv_crush_risk = opp.get("iv_crush_risk", 0.0)
+            iv_crush_boost = 1.0
+            iv_crush_badge = "normal"
+
+            if iv_crush_risk >= 1.5:
+                # Elevated IV crush risk: sell side (short calls/long puts) favored
+                iv_crush_boost = 0.97  # -3% penalty for long calls, neutral for puts
+                iv_crush_badge = "⚠️  High Risk (1.5x+)"
+            elif iv_crush_risk >= 1.2:
+                # Moderately elevated IV
+                iv_crush_boost = 0.99  # -1% slight penalty
+                iv_crush_badge = "elevated"
+            else:
+                iv_crush_badge = "low_crush_risk"
+
+            opp["iv_crush_badge"] = iv_crush_badge
+
+            # Apply IV crush penalty to current score
+            if "score" in opp and isinstance(opp["score"], (int, float)):
+                opp["score"] = round(opp["score"] * iv_crush_boost, 2)
+
+            # ─── Phase 2: Fill Velocity / Institutional Interest ───
+            # High fill velocity = aggressive institutional buying (conviction signal)
+            fill_velocity = opp.get("fill_velocity", 0.0)
+            fill_vel_boost = 1.0
+            fill_vel_badge = "normal"
+
+            if fill_velocity >= 5000:
+                # Exceptional velocity: >5000 contracts/minute = massive institutional flow
+                fill_vel_boost = 1.04  # +4% boost
+                fill_vel_badge = "🔥 Exceptional (5k+/min)"
+            elif fill_velocity >= 1000:
+                # Normal institutional activity
+                fill_vel_boost = 1.0
+                fill_vel_badge = "steady"
+            else:
+                # Below average activity
+                fill_vel_badge = "low_activity"
+
+            opp["fill_velocity_badge"] = fill_vel_badge
+
+            # Apply fill velocity boost to current score
+            if "score" in opp and isinstance(opp["score"], (int, float)):
+                opp["score"] = round(opp["score"] * fill_vel_boost, 2)
+
             enriched.append(opp)
 
         finviz_covered = sum(1 for o in enriched if o.get("insider_source") == "finviz")
