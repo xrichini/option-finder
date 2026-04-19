@@ -121,23 +121,31 @@ Last commit: `46d90a4` — Insider enrichment via Finviz (97 tickers with recent
 
 **Goal**: Enhance user experience with trend visualization and earnings context
 
-### **Task 1: Order Flow Sparklines** (20 min)
-- Add 7-day trend chart for order_flow_strength in table
-- Chart shows bullish/bearish direction over time
-- Location: Inline sparkline in OrdFlow column (44×14px SVG)
-- Endpoint: `GET /api/history/flow-trends?symbols=...` (batch)
-- Color: Green (bullish trend), Red (bearish trend), Gray (flat)
-- Cache: Reuse with re-sort/re-filter (localStorage)
-- Tooltip: Show min/max order flow strength for period
+### **✅ Task 1: Order Flow Sparklines** (20 min) — COMPLETE
+- [x] Add 7-day trend chart for order_flow_strength in table
+- [x] Chart shows bullish/bearish direction over time
+- [x] Location: Inline sparkline in OrdFlow column (36×12px SVG)
+- [x] Endpoint: `GET /api/hybrid/trends/order-flow?symbols=...` (batch)
+- [x] Color: Green (bullish trend), Red (bearish trend), Gray (flat)
+- [x] Backend method: `HistoryService.get_order_flow_trends()`
+- [x] UI function: `_makeFlowTrendSparkline()`
+- [x] Async fetch + cache: `_flowTrendCache` populated by `_fetchTrendData()`
+- [x] Cache reused with re-sort/re-filter (no re-fetch)
+- [x] Deployed: Commit `da529ab`
+- Status: ✅ Live in production
 
-### **Task 2: Crush Probability Sparklines** (20 min)
-- Add 7-day trend for crush_probability (IV volatility regime)
-- Shows when IV compression risk is rising/falling
-- Location: Inline sparkline in CrushProb column
-- Endpoint: `GET /api/history/crush-trends?symbols=...` (batch)
-- Color: Red (high crush risk rising), Green (crush risk falling), Gray (stable)
-- Cache: Same as flow sparklines
-- Tooltip: Show average crush probability for period
+### **✅ Task 2: Crush Probability Sparklines** (20 min) — COMPLETE
+- [x] Add 7-day trend for crush_probability (IV volatility regime)
+- [x] Shows when IV compression risk is rising/falling
+- [x] Location: Inline sparkline in CrushProb column (36×12px SVG)
+- [x] Endpoint: `GET /api/hybrid/trends/crush-probability?symbols=...` (batch)
+- [x] Color: Red (high crush risk rising), Green (crush risk falling), Gray (stable)
+- [x] Backend method: `HistoryService.get_crush_probability_trends()`
+- [x] UI function: `_makeCrushTrendSparkline()`
+- [x] Async fetch + cache: `_crushTrendCache` populated by `_fetchTrendData()`
+- [x] Dynamic update: `_updateSparklinesBadges()` injects SVGs after data arrives
+- [x] Deployed: Commit `da529ab`
+- Status: ✅ Live in production
 
 ### **Task 3: Earnings Calendar Integration** (30 min)
 - New badge column: "Earnings" showing next earnings date
