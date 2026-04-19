@@ -117,6 +117,62 @@ Last commit: `46d90a4` — Insider enrichment via Finviz (97 tickers with recent
 
 ---
 
+## 🎨 Phase 4 — UI Enhancements (Option 1: Visual + Analytics)
+
+**Goal**: Enhance user experience with trend visualization and earnings context
+
+### **Task 1: Order Flow Sparklines** (20 min)
+- Add 7-day trend chart for order_flow_strength in table
+- Chart shows bullish/bearish direction over time
+- Location: Inline sparkline in OrdFlow column (44×14px SVG)
+- Endpoint: `GET /api/history/flow-trends?symbols=...` (batch)
+- Color: Green (bullish trend), Red (bearish trend), Gray (flat)
+- Cache: Reuse with re-sort/re-filter (localStorage)
+- Tooltip: Show min/max order flow strength for period
+
+### **Task 2: Crush Probability Sparklines** (20 min)
+- Add 7-day trend for crush_probability (IV volatility regime)
+- Shows when IV compression risk is rising/falling
+- Location: Inline sparkline in CrushProb column
+- Endpoint: `GET /api/history/crush-trends?symbols=...` (batch)
+- Color: Red (high crush risk rising), Green (crush risk falling), Gray (stable)
+- Cache: Same as flow sparklines
+- Tooltip: Show average crush probability for period
+
+### **Task 3: Earnings Calendar Integration** (30 min)
+- New badge column: "Earnings" showing next earnings date
+- Data source: FMP `/calendar/earnings` API + local cache
+- Display format:
+  - 🔔 DATE if earnings within 7 days (red background = critical)
+  - 🔔 DATE if earnings within 30 days (yellow background = caution)
+  - ⚪ NO EARNINGS if no events found
+- Integrate with crush_probability: auto-set crush_catalyst to "earnings" if date matches
+- Cache: 60-minute TTL (FMP rate limit friendly)
+- Endpoint: `GET /api/earnings/calendar?symbols=...` (batch)
+
+### **Task 4: Enhanced Tooltips** (15 min)
+- Order Flow tooltip: "Vol trend: +15% | OI trend: +8% | Strong bullish conviction"
+- Crush Prob tooltip: "IV ratio: 1.8x | 52w avg | Earnings Apr 30 | 85% crush risk"
+- Size % tooltip: "Current: 2,500 | 30d avg: 1,200 | Percentile: 98th"
+- Fill Vel tooltip: "Velocity: 7,200 contracts/min | Exceptional institutional flow"
+- Earnings tooltip: "Q1 earnings: Apr 30 | Last 4Q avg move: 3.2%"
+
+### **Task 5: Trend Indicators in Score Cell** (10 min)
+- Add ↗️ (rising), ↘️ (falling), → (flat) symbols next to score
+- Indicate 7-day score trend direction
+- Color: Green if rising, Red if falling
+- Example: "45.2 ↗️" means score improving over week
+
+### **Task 6: Side Panel: Whale Analysis Dashboard** (Optional Enhancement)
+- Click on row → slide out panel showing:
+  - 30-day order flow history (larger chart)
+  - 30-day crush probability history
+  - Earnings dates for next 90 days
+  - Insider activity (if available)
+  - Score composition breakdown (all multipliers)
+
+---
+
 ## 🛠 Technique / Qualité
 
 - [ ] **Order Flow Signals — Enrichissement du whale_score**
