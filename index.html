@@ -350,24 +350,6 @@
         <span class="tb-brand">🐳 Flow</span>
         <div class="tb-sep"></div>
         <div class="tb-controls">
-            <select id="tbUniverse" class="tb-select" onchange="updateUniverseUI()">
-                <option value="nasdaq100" selected>Nasdaq 100</option>
-                <option value="sp500">S&amp;P 500</option>
-                <option value="dow30">DOW 30</option>
-                <option value="manual">Custom</option>
-            </select>
-            <select id="tbSide" class="tb-select">
-                <option value="both">ALL</option>
-                <option value="call">CALL</option>
-                <option value="put">PUT</option>
-            </select>
-            <select id="tbDte" class="tb-select">
-                <option value="3">DTE ≤ 3</option>
-                <option value="7" selected>DTE ≤ 7</option>
-                <option value="14">DTE ≤ 14</option>
-                <option value="30">DTE ≤ 30</option>
-                <option value="45">DTE ≤ 45</option>
-            </select>
             <button id="btnScan" class="tb-btn tb-btn-scan" onclick="loadLatestScan()">&#8595; Load Latest</button>
             <button id="btnFilters" class="tb-btn tb-btn-filter" onclick="toggleFilterPanel()" title="Show/hide option filters">&#9881; Filters</button>
             <button id="btnRefresh" class="tb-btn tb-btn-refresh" onclick="loadLatestScan()" title="Reload latest scan">&#8635;</button>
@@ -380,6 +362,32 @@
 
     <!-- ══════════════════ FILTER PANEL (collapsed by default) ══════════════════ -->
     <div id="filterPanel" class="filter-panel collapsed">
+        <!-- Row 1: Universe, Side, DTE Range -->
+        <div class="fp-row">
+            <label>Universe
+                <select id="fpUniverse" class="tb-select" style="width:110px">
+                    <option value="">All Universes</option>
+                    <option value="nasdaq100">Nasdaq 100</option>
+                    <option value="sp500">S&amp;P 500</option>
+                    <option value="dow30">DOW 30</option>
+                    <option value="manual">Custom</option>
+                </select>
+            </label>
+            <label>Side
+                <select id="fpSide" class="tb-select" style="width:95px">
+                    <option value="both">Calls+Puts</option>
+                    <option value="call">Calls</option>
+                    <option value="put">Puts</option>
+                </select>
+            </label>
+            <label>DTE Min
+                <input id="fpDteMin" type="number" value="3" min="0" max="60" style="width:50px">
+            </label>
+            <label>DTE Max
+                <input id="fpDteMax" type="number" value="14" min="0" max="365" style="width:50px">
+            </label>
+        </div>
+        <!-- Row 2: Vol, OI, Score, IV -->
         <div class="fp-row">
             <label>Min Vol
                 <input id="fpMinVol" type="number" value="500" min="0" style="width:65px">
@@ -393,17 +401,19 @@
             <label>IV% ≥
                 <input id="fpMinIv" type="number" value="0" min="0" style="width:55px">
             </label>
-            <label id="fpSiRow">SI Min%
+            <label id="fpSiRow" style="display:none">SI Min%
                 <input id="fpSiMin" type="number" value="20" min="0" max="100" style="width:55px">
             </label>
         </div>
+        <!-- Row 3: Custom tickers and buttons -->
         <div class="fp-row" id="fpCustomRow" style="display:none">
             <label class="fp-tickers">Custom tickers
                 <textarea id="fpCustomTickers" rows="1" placeholder="AAPL, TSLA, NVDA, SPY, MSFT">AAPL, TSLA, NVDA, SPY, MSFT</textarea>
             </label>
         </div>
-        <div class="fp-row" style="justify-content:flex-end; margin-top:4px">
-            <button onclick="applyClientFilters()" style="padding:4px 14px;font-size:12px;border-radius:4px;border:1px solid #555;background:#2a2a2a;color:#e0e0e0;cursor:pointer;" title="Filter current results without re-scanning">Apply filters</button>
+        <div class="fp-row" style="justify-content:flex-end; margin-top:4px; gap:8px">
+            <button onclick="resetFilters()" style="padding:4px 14px;font-size:12px;border-radius:4px;border:1px solid #555;background:#2a2a2a;color:#a0aec0;cursor:pointer;" title="Reset all filters to defaults">Reset</button>
+            <button onclick="applyClientFilters()" style="padding:4px 14px;font-size:12px;border-radius:4px;border:1px solid #3182ce;background:#2d3748;color:#63b3ed;cursor:pointer;font-weight:600;" title="Filter current results without re-scanning">Apply Filters</button>
         </div>
     </div>
 
@@ -497,17 +507,7 @@
 
                 let opps = data.opportunities || [];
 
-                // Client-side filters: universe + side
-                const universe = document.getElementById('tbUniverse').value;
-                const side = document.getElementById('tbSide').value;
-                
-                if (universe && universe !== 'manual') {
-                    opps = opps.filter(o => (o.universe || 'nasdaq100') === universe);
-                }
-                if (side !== 'both') {
-                    opps = opps.filter(o => (o.option_type || '').toLowerCase() === side);
-                }
-
+                // Keep all data — filtering happens in filter panel now
                 currentOptions  = opps;
                 filteredOptions = [...currentOptions];
                 if (tickerSearch) filteredOptions = filteredOptions.filter(
@@ -515,7 +515,7 @@
 
                 document.getElementById('scanMeta').textContent =
                     currentOptions.length + ' results · ' +
-                    (universe && universe !== 'manual' ? universe : data.universes ? data.universes.join('+') : 'nasdaq100') + ageLabel +
+                    (data.universes ? data.universes.join('+') : 'nasdaq100') + ageLabel +
                     (staleWarn ? ' ⚠️ stale' : '');
 
                 renderOptions();
@@ -539,8 +539,7 @@
         document.addEventListener('DOMContentLoaded', () => {
             setupFilterButtons();
             toggleFilterButtons(false);
-            updateUniverseUI();
-            document.getElementById('tbUniverse').addEventListener('change', updateUniverseUI);
+            document.getElementById('fpUniverse').addEventListener('change', updateUniverseUI);
             loadLatestScan();
         });
 
@@ -630,7 +629,7 @@
         };
 
         function updateUniverseUI() {
-            const u = document.getElementById('tbUniverse').value;
+            const u = document.getElementById('fpUniverse').value;
             const customRow = document.getElementById('fpCustomRow');
             const siRow     = document.getElementById('fpSiRow');
             if (customRow) customRow.style.display = (u === 'manual') ? '' : 'none';
@@ -664,15 +663,17 @@
         function applyClientFilters() {
             if (!currentOptions.length) return;   // nothing to filter yet
 
-            const universe = document.getElementById('tbUniverse').value;
+            const universe = document.getElementById('fpUniverse').value || '';
+            const side     = document.getElementById('fpSide').value;
             const minVol   = parseInt(document.getElementById('fpMinVol').value)  || 0;
             const minOi    = parseInt(document.getElementById('fpMinOi').value)   || 0;
             const minScore = parseFloat(document.getElementById('fpScore').value) || 0;
             const minIv    = parseFloat(document.getElementById('fpMinIv').value) || 0;
-            const side     = document.getElementById('tbSide').value;
+            const dteMin   = parseInt(document.getElementById('fpDteMin').value)  || 0;
+            const dteMax   = parseInt(document.getElementById('fpDteMax').value)  || 365;
 
             filteredOptions = currentOptions.filter(o => {
-                // Filter by universe if not 'manual'
+                // Filter by universe (empty = all universes)
                 if (universe && universe !== 'manual' && (o.universe || 'nasdaq100') !== universe) {
                     return false;
                 }
@@ -683,10 +684,14 @@
                 let   iv    = o.implied_volatility || 0;
                 if (iv > 0 && iv <= 1) iv *= 100;   // normalize to percentage (mirrors createFlowRow)
                 const type  = (o.option_type || '').toLowerCase();
+                const dte   = o.dte || 0;
+                
                 if (vol   < minVol)   return false;
                 if (oi    < minOi)    return false;
                 if (score < minScore) return false;
                 if (iv    < minIv)    return false;
+                if (dteMin > 0 && dte < dteMin) return false;
+                if (dteMax > 0 && dte > dteMax) return false;
                 if (side !== 'both' && type !== side) return false;
                 return true;
             });
@@ -696,6 +701,20 @@
 
             renderOptions();
             updateFilterBadges();
+        }
+
+        // ──── RESET ALL FILTERS ────
+        function resetFilters() {
+            document.getElementById('fpUniverse').value = '';
+            document.getElementById('fpSide').value = 'both';
+            document.getElementById('fpDteMin').value = '3';
+            document.getElementById('fpDteMax').value = '14';
+            document.getElementById('fpMinVol').value = '500';
+            document.getElementById('fpMinOi').value = '100';
+            document.getElementById('fpScore').value = '30';
+            document.getElementById('fpMinIv').value = '0';
+            updateUniverseUI();
+            applyClientFilters();
         }
 
         function exportCsv() {
