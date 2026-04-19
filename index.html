@@ -497,8 +497,13 @@
 
                 let opps = data.opportunities || [];
 
-                // Client-side side filter
+                // Client-side filters: universe + side
+                const universe = document.getElementById('tbUniverse').value;
                 const side = document.getElementById('tbSide').value;
+                
+                if (universe && universe !== 'manual') {
+                    opps = opps.filter(o => (o.universe || 'nasdaq100') === universe);
+                }
                 if (side !== 'both') {
                     opps = opps.filter(o => (o.option_type || '').toLowerCase() === side);
                 }
@@ -510,7 +515,7 @@
 
                 document.getElementById('scanMeta').textContent =
                     currentOptions.length + ' results · ' +
-                    (data.universe || 'nasdaq100') + ageLabel +
+                    (universe && universe !== 'manual' ? universe : data.universes ? data.universes.join('+') : 'nasdaq100') + ageLabel +
                     (staleWarn ? ' ⚠️ stale' : '');
 
                 renderOptions();
@@ -642,6 +647,10 @@
                 fp.classList.remove('collapsed');
                 document.getElementById('btnFilters').classList.add('active');
             }
+            
+            // Re-apply filters with new universe selection
+            applyClientFilters();
+            renderOptions();
         }
 
         function toggleFilterPanel() {
@@ -655,6 +664,7 @@
         function applyClientFilters() {
             if (!currentOptions.length) return;   // nothing to filter yet
 
+            const universe = document.getElementById('tbUniverse').value;
             const minVol   = parseInt(document.getElementById('fpMinVol').value)  || 0;
             const minOi    = parseInt(document.getElementById('fpMinOi').value)   || 0;
             const minScore = parseFloat(document.getElementById('fpScore').value) || 0;
@@ -662,6 +672,11 @@
             const side     = document.getElementById('tbSide').value;
 
             filteredOptions = currentOptions.filter(o => {
+                // Filter by universe if not 'manual'
+                if (universe && universe !== 'manual' && (o.universe || 'nasdaq100') !== universe) {
+                    return false;
+                }
+                
                 const vol   = o.volume         || 0;
                 const oi    = o.open_interest  || 0;
                 const score = o.hybrid_score   || o.whale_score || 0;
