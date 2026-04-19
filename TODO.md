@@ -58,6 +58,65 @@ Last commit: `46d90a4` — Insider enrichment via Finviz (97 tickers with recent
 
 ---
 
+## 🎯 Phase d'Amélioration — Signaux Avancés (vs Unusual Whales)
+
+**Goal**: Competitive advantage vs Unusual Whales — add institutional-grade signals
+
+### **Phase 1 (This Week) — Quick Wins**
+
+- [ ] **#1: Moneyness Bucket** (10 min)
+  - Filter out far OTM (lottery tickets)
+  - Add moneyness classification: ITM / ATM / OTM / FAR-OTM
+  - Boost whale_score: +3 if ATM (high gamma, liquid)
+  - Reduce whale_score: -5 if FAR OTM (< 0.85 moneyness)
+  - Source: Strike / Current_Stock_Price
+  - UI: Show moneyness indicator in table
+
+- [ ] **#2: Bid-Ask Spread Aggression** (5 min)
+  - Calculate spread % = (Ask - Bid) / Mid * 100
+  - Classification: Aggressive (100%+) / Normal (50-100%) / Patient (< 50%)
+  - Add to whale_score: +2 if aggressive (conviction buying)
+  - UI: Show spread % in new column or tooltip
+
+- [ ] **#3: Size Percentile (30min)**
+  - Track 30-day average volume per option contract
+  - Size_Percentile = Today_Volume / 30Day_Avg_Volume
+  - Categories: Top 1% (>3x) / Top 5% (>2x) / Top 25% (>1.3x) / Normal
+  - Add to whale_score: +5 if top 1%, +3 if top 5%
+  - UI: Show percentile badge (🟢🟢 / 🟢 / 🟡)
+  - Storage: Extend `options_history.db` with volume_30d_avg column
+
+### **Phase 2 (Next Week) — Data Integration**
+
+- [ ] **#4: Fill Velocity** (15 min)
+  - Calculate: Volume / Minutes_Since_Market_Open
+  - High velocity (> 5k/min) = institutional execution
+  - Add to whale_score: +3 if velocity > 5k/min
+  - UI: Show in real-time refresh cycle
+
+- [ ] **#5: IV Crush Risk Score** (20 min)
+  - IV_Crush_Risk = Current_IV / 52w_Avg_IV (from FMP)
+  - Categories: High (>1.5) / Normal (1.0-1.5) / Safe (<1.0)
+  - Reduce whale_score: -3 if crush_risk > 1.5
+  - UI: Show IV crush indicator next to IVR column
+  - Integration: Use existing FMP 52-week IV data
+
+### **Phase 3 (Enhancement) — Advanced**
+
+- [ ] **#6: Order Flow Direction** (Medium)
+  - Classify as CALL_BUYING / CALL_SELLING / BALANCED based on volume distribution
+  - Requires: Tradier intraday bid/ask volume ratio tracking
+  - Add to whale_score: +2 if CALL_BUYING, -1 if CALL_SELLING
+  - UI: Flow direction badge (🟢 buying / 🔴 selling)
+
+- [ ] **#7: IV Crush Assessment** (Hard)
+  - Combine earnings calendar + current IV vs historical
+  - Flag contracts at risk of post-earnings IV crush
+  - Reduce whale_score: -5 if earnings within 7 days + IV_Crush_Risk > 2.0
+  - UI: ⚠️ WARNING badge on high-risk contracts
+
+---
+
 ## 🛠 Technique / Qualité
 
 - [ ] **Order Flow Signals — Enrichissement du whale_score**
