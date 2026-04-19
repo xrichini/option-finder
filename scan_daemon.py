@@ -236,12 +236,19 @@ async def run_scan_async(symbols: list, params: dict) -> list:
 # ── Result persistence ──────────────────────────────────────────────────────
 
 
-def write_results(opportunities: list, universe: str, symbols: list):
+def write_results(opportunities: list, universe: str, symbols: list, output_path: str = None):
     """
     Écrit les résultats dans data/latest_scan.json (écriture atomique).
     Le fichier est lu par le endpoint GET /api/daemon/latest-scan.
+    
+    Args:
+        opportunities: Liste des opportunités trouvées
+        universe: Univers scanné (nasdaq100, sp500, dow30)
+        symbols: Symboles traités
+        output_path: Chemin de sortie optionnel (défaut: data/latest_scan.json)
     """
-    OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    out_file = Path(output_path) if output_path else OUTPUT_PATH
+    out_file.parent.mkdir(parents=True, exist_ok=True)
 
     payload = {
         "success": True,
@@ -254,14 +261,14 @@ def write_results(opportunities: list, universe: str, symbols: list):
     }
 
     # Écriture atomique via fichier temporaire + rename
-    tmp = OUTPUT_PATH.with_suffix(".tmp")
+    tmp = out_file.with_suffix(".tmp")
     tmp.write_text(json.dumps(payload, default=str), encoding="utf-8")
-    tmp.replace(OUTPUT_PATH)
+    tmp.replace(out_file)
 
     calls = sum(1 for o in opportunities if o.get("option_type") == "CALL")
     puts = len(opportunities) - calls
     logger.info(
-        f"💾 Résultats sauvegardés → {OUTPUT_PATH}  "
+        f"💾 Résultats sauvegardés → {out_file}  "
         f"({len(opportunities)} total — {calls} CALLS, {puts} PUTS)"
     )
 
@@ -269,10 +276,15 @@ def write_results(opportunities: list, universe: str, symbols: list):
 # ── Full scan cycle ─────────────────────────────────────────────────────────
 
 
-def do_scan(universe: str, params: dict):
+def do_scan(universe: str, params: dict, output_path: str = None):
     """
     Cycle complet: résolution des symboles + scan + enrichissement + sauvegarde.
     Bloquant (utilise asyncio.run pour exécuter la partie async).
+    
+    Args:
+        universe: Univers à scanner (nasdaq100, sp500, dow30)
+        params: Paramètres de screening
+        output_path: Chemin de sortie optionnel (défaut: data/latest_scan.json)
     """
     start = datetime.now()
     logger.info(f"{'='*60}")
@@ -338,7 +350,7 @@ def do_scan(universe: str, params: dict):
         except Exception as e:
             logger.warning(f"⚠️  Nettoyage DB non disponible ({e}), continuant...")
 
-        write_results(opportunities, universe, symbols)
+        write_results(opportunities, universe, symbols, output_path)
 
         elapsed = (datetime.now() - start).total_seconds()
         logger.info(
@@ -403,6 +415,12 @@ def main():
     parser.add_argument(
         "--min-score", type=float, default=30.0, help="Whale score minimum"
     )
+    parser.add_argument(
+        "--output",
+        type=str,
+        default=None,
+        help="Chemin de sortie pour les résultats JSON (défaut: data/latest_scan.json)",
+    )
 
     args = parser.parse_args()
 
@@ -426,7 +444,7 @@ def main():
                 "⏸️  Marché fermé — aucun scan lancé (utilise --force pour outrepasser)."
             )
             sys.exit(0)
-        do_scan(args.universe, params)
+        do_scan(args.universe, params, args.output)
         return
 
     # ── Mode daemon (APScheduler) ──────────────────────────────────────────────

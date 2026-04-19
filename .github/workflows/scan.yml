@@ -27,11 +27,14 @@ on:
 
 jobs:
   scan:
-    name: Scan options
+    name: Scan [${{ matrix.universe }}]
     runs-on: ubuntu-latest
     permissions:
       contents: write   # nécessaire pour git push
-
+    strategy:
+      matrix:
+        universe: [nasdaq100, sp500, dow30]
+    
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -44,12 +47,13 @@ jobs:
           FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
           POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}
         run: |
-          UNIVERSE="${{ github.event.inputs.universe || 'nasdaq100' }}"
+          UNIVERSE="${{ matrix.universe }}"
+          OUTPUT_FILE="data/scan_${UNIVERSE}.json"
           FORCE_FLAG=""
           if [ "${{ github.event.inputs.force }}" = "true" ]; then
             FORCE_FLAG="--force"
           fi
-          echo "📡 Building Docker image & scanning universe: $UNIVERSE (force=${{ github.event.inputs.force || 'false' }})"
+          echo "📡 Building Docker image & scanning universe: $UNIVERSE → $OUTPUT_FILE"
           
           # Build Docker image
           docker build -t option-finder:latest .
@@ -62,16 +66,83 @@ jobs:
             -e FMP_API_KEY="$FMP_API_KEY" \
             -e POLYGON_API_KEY="$POLYGON_API_KEY" \
             option-finder:latest \
-            python scan_daemon.py --once --universe "$UNIVERSE" $FORCE_FLAG
+            python scan_daemon.py --once --universe "$UNIVERSE" --output "$OUTPUT_FILE" $FORCE_FLAG
 
-      - name: Commit scan results
+      - name: Commit individual scan results
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/scan_*.json
+          git diff --staged --quiet || git commit -m "chore: scan results [${{ matrix.universe }}] $(date -u '+%Y-%m-%dT%H:%MZ')"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  merge-and-deploy:
+    name: Merge results & deploy
+    needs: scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Merge scan results
+        run: |
+          python3 << 'EOF'
+          import json
+          from pathlib import Path
+          from datetime import datetime
+          
+          merged = {
+            "timestamp": datetime.now().isoformat(),
+            "universes": ["nasdaq100", "sp500", "dow30"],
+            "opportunities": []
+          }
+          
+          for universe in ["nasdaq100", "sp500", "dow30"]:
+            path = Path(f"data/scan_{universe}.json")
+            if path.exists():
+              try:
+                with open(path) as f:
+                  data = json.load(f)
+                  opps = data.get("opportunities", [])
+                  # Add universe field to each opportunity
+                  for opp in opps:
+                    opp["universe"] = universe
+                  merged["opportunities"].extend(opps)
+                  print(f"✅ Merged {len(opps)} from {universe}")
+              except Exception as e:
+                print(f"⚠️  Error merging {universe}: {e}")
+            else:
+              print(f"⚠️  File not found: {path}")
+          
+          # Sort by whale_score descending + remove duplicates
+          seen = set()
+          deduped = []
+          for opp in sorted(merged["opportunities"], key=lambda x: x.get("whale_score", 0), reverse=True):
+            sym = opp.get("option_symbol")
+            if sym not in seen:
+              seen.add(sym)
+              deduped.append(opp)
+          
+          merged["opportunities"] = deduped
+          print(f"📊 Total: {len(deduped)} unique opportunities after dedup")
+          
+          # Write merged results
+          with open("data/latest_scan.json", "w") as f:
+            json.dump(merged, f)
+          print(f"✅ Merged results written to data/latest_scan.json")
+          EOF
+
+      - name: Commit merged results
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add data/latest_scan.json
-          git diff --staged --quiet && echo "Aucun changement — skip commit." || (
-            git commit -m "chore: scan results $(date -u '+%Y-%m-%dT%H:%MZ')" &&
-            git push
-          )
+          git diff --staged --quiet || git commit -m "chore: merged scan results (nasdaq100+sp500+dow30) $(date -u '+%Y-%m-%dT%H:%MZ')"
+          git push
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
