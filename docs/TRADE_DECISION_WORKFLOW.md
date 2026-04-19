@@ -93,20 +93,26 @@
 
 ---
 
-### 2.3 Open Interest Momentum (New Positioning)
+### 2.3 Volume-to-Open Interest Ratio (Flow Intensity Without OI Change)
 
-**Logic**: If OI changed dramatically from yesterday = new big position building  
-**Signal Applied**: +3 points for OI +30% or more
+**Logic**: VOL/OI ratio shows how much of today's total OI moved as volume  
+- **High ratio (> 0.5)** = Intense flow activity, new positioning
+- **Low ratio (< 0.1)** = Thin flow relative to existing OI
 
-| OI Change | Indicator | Action |
+| VOL/OI Ratio | Interpretation | Trade Quality |
 |---|---|---|
-| **+30% or more** | 🟢 New position buildup | Strong buy signal |
-| **+15% to +30%** | 🟡 Moderate buildup | Buy signal |
-| **-5% to +15%** | ⚪ Neutral | No signal |
-| **-20% or worse** | 🔴 Position unwind | Sell signal |
+| **> 1.0** | Extreme flow (more than daily average) | 🟢 **HOTTEST CONTRACTS** |
+| **0.5 - 1.0** | Strong flow intensity | 🟡 Good momentum |
+| **0.2 - 0.5** | Moderate flow | ⚪ Decent |
+| **< 0.1** | Minimal relative flow | 🔴 Avoid |
 
-**Where to find**: Column `OI` shows current open interest (compare vs daily history)  
-**Check history**: UI shows 7-day sparkline in Score column — look for trend
+**Why it matters**: 
+- High VOL/OI = Today's volume is large compared to standing interest
+- Suggests traders are building **new positions** (not just rolling old ones)
+- Better indicator than raw volume alone
+
+**Where to find**: Column `VOL/OI` in table (directly visible, sortable)  
+**Quick action**: Sort by `VOL/OI` DESC to find hottest contracts
 
 ---
 
@@ -174,14 +180,21 @@ Lower beta + high volume = institutional conviction play (higher quality)
 ```
 START: You have a 100/100 whale option
   │
-  ├─→ Check Volume
+  ├─→ Check Volume (Liquidity)
   │    ├─ If < 5k: SKIP (too illiquid)
   │    └─ If >= 5k: CONTINUE
   │
-  ├─→ Check OI Change (vs yesterday)
-  │    ├─ If -20%: SKIP (unwinding)
-  │    ├─ If -5% to +15%: NEUTRAL (continue checking)
-  │    └─ If +15% or more: 🟢 STRONG SIGNAL
+  ├─→ Check VOL/OI Ratio (Flow Intensity)
+  │    ├─ If < 0.1: SKIP (minimal relative flow)
+  │    ├─ If 0.1 to 0.5: ⚪ NEUTRAL (continue checking)
+  │    ├─ If 0.5 to 1.0: 🟡 GOOD FLOW
+  │    └─ If > 1.0: 🟢 **HOTTEST** (build new positions)
+  │
+  ├─→ Check Delta (Directional Bias)
+  │    ├─ If Delta > 0.6 (calls): 🟢 Strong bullish
+  │    ├─ If Delta 0.4-0.6: 🟡 Near ATM (high risk/reward)
+  │    ├─ If Delta < 0.3 (calls): 🔴 Far OTM (lottery)
+  │    └─ (Reverse logic for puts)
   │
   ├─→ Check Put/Call Flow
   │    ├─ If mostly PUTS: SKIP (defensive)
@@ -190,6 +203,11 @@ START: You have a 100/100 whale option
   ├─→ Check Earnings (⚡)
   │    ├─ If ⚡ (within 7d): ⚠️ HIGH IV RISK
   │    └─ If no ⚡: ✅ NORMAL CONDITIONS
+  │
+  ├─→ Check IV Rank (IVR column)
+  │    ├─ If IVR > 80%: 🟢 Elevated volatility, good for selling premium
+  │    ├─ If IVR 30-80%: 🟡 Normal range
+  │    └─ If IVR < 30%: ⚪ Low volatility (wait for expansion)
   │
   ├─→ Check Beta (Risk Profile)
   │    ├─ If Beta > 2.0 + Vol > 50k: 🚀 SPECULATIVE WHALE
@@ -252,20 +270,71 @@ START: You have a 100/100 whale option
 
 ## 📋 Quick Reference Checklist
 
-When you have a 100.0 score option, check in order:
+When you have a 100.0 score option, check in order (top to bottom = priority):
 
 ```
-☐ Volume > 10,000?           → (Most filters out noise)
-☐ OI changed +15% or more?   → (New positioning)
+☐ Volume > 10,000?           → (Most important — liquidity)
+☐ VOL/OI ratio > 0.5?        → (High flow intensity, new positions)
+☐ Delta 0.4 - 0.7?           → (Not too OTM, good probability)
 ☐ Mostly CALLs (not PUTs)?   → (Bullish sentiment)
+☐ IVR > 50%?                 → (Elevated volatility context)
 ☐ No ⚡ earnings?            → (Avoid IV crush risk)
-☐ Beta < 2.0?               → (Risk manageable)
-☐ Insider BULLISH or ⚪?    → (No insider selling)
-☐ Spread < 2%?              → (Liquid)
+☐ Beta < 2.0?                → (Risk manageable)
+☐ Insider BULLISH or ⚪?     → (No insider selling)
 
-If 5+ boxes checked → BUY  
-If 3-4 boxes checked → HOLD / WATCH  
-If < 3 boxes checked → SKIP
+**Scoring**:
+- 7+ checks → 🟢 **STRONG BUY** (high conviction)
+- 5-6 checks → 🟡 **GOOD** (tradeable)
+- 3-4 checks → ⚪ **NEUTRAL** (watch, don't chase)
+- < 3 checks → 🔴 **SKIP**
+```
+
+---
+
+## 📊 Practical Multi-Column Analysis
+
+### Example Trade Analysis (From Your Screenshot)
+
+Looking at top NVDA/AAPL/MSFT calls visible:
+
+**NVDA $130 Call (14 DTE)**
+```
+Volume:    84,691 ✅ (massive, priority flow)
+VOL/OI:    9.22x   ✅ (extreme — 900% of daily OI!)
+Delta:     0.66    ✅ (strong bullish, 66% prob ITM)
+IVR:       23.3%   🟡 (IV is compressed, low vol context)
+Beta:      2.33    ⚠️ (high risk, large swings)
+DTE:       14d     ✅ (sweet spot timing)
+
+Decision: BUY (high conviction flow, ignore low IV — it's just context)
+Sizing: Smaller position (high beta)
+```
+
+**AAPL $270 Call (14 DTE)**
+```
+Volume:    37,777  ✅ (good, 2nd tier)
+VOL/OI:    5.00x   ✅ (strong, 500% of daily OI)
+Delta:     0.52    ✅ (near ATM, good risk/reward)
+IVR:       18.1%   🔴 (very compressed IV)
+Beta:      1.11    ✅ (low beta, stable)
+DTE:       14d     ✅ (sweet spot)
+Insider:   BULLISH ✅ (extra confirmation)
+
+Decision: BUY (lower risk than NVDA, good mechanics)
+Sizing: Normal position
+```
+
+**MSFT $425 Call (14 DTE)**
+```
+Volume:    10,908  ✅ (minimum threshold met)
+VOL/OI:    2.91x   ⚪ (moderate, 291% of daily OI)
+Delta:     0.46    ✅ (near ATM)
+IVR:       20.6%   🔴 (compressed)
+Beta:      1.11    ✅ (low beta)
+DTE:       14d     ✅ (sweet spot)
+
+Decision: HOLD/WATCH (not as hot as top 2, but still valid)
+Wait for better entry if others fill first
 ```
 
 ---
@@ -277,8 +346,9 @@ If < 3 boxes checked → SKIP
 2. **Filter by Universe** → Focus on one (e.g., NASDAQ 100 = 80-90 opps)
 3. **Apply filters** → `Min Vol: 10k`, `Score >= 95`
    - Result: ~30-40 candidates
-4. **Sort by Volume DESC** → See highest volume first
-5. **Spot top 5** → Analyze using Stage 3 (Beta, Earnings, Insider)
+4. **Sort by VOL/OI DESC** → See hottest flow first (not just volume)
+5. **Spot top 10** → Quick check Delta + IV Rank + Earnings
+6. **Top 3-5** → Full analysis using the checklist above
 
 ### Intraday (Every 30-45 min)
 1. **Live refresh** → Prices/Greeks update every 30s
