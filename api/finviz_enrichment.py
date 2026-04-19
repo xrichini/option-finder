@@ -238,6 +238,36 @@ def enrich_opportunities_with_insider_data(opportunities: list[dict]) -> list[di
                 opp["score_original"] = original_score
                 opp["score"] = round(original_score * opp["insider_boost"], 2)
 
+            # ─── Phase 1: Moneyness Bucket Enhancement ───
+            # ATM options = highest quality (highest gamma, most liquid)
+            # FAR OTM = lottery tickets (skip)
+            moneyness = opp.get("moneyness", "")
+            moneyness_pct = opp.get("moneyness_pct", 0.0)
+            moneyness_boost = 1.0
+            
+            if moneyness == "ATM":
+                # ATM = optimal for gamma trades, highest quality whale activity
+                moneyness_boost = 1.05  # +5% score boost
+                opp["moneyness_quality"] = "premium"
+            elif moneyness == "OTM" and abs(moneyness_pct) < 1.0:
+                # Slightly OTM (< 1% OTM) = directional play, good quality
+                moneyness_boost = 1.02  # +2% score boost
+                opp["moneyness_quality"] = "good"
+            elif moneyness == "ITM":
+                # ITM calls/puts = more defensive, but still liquid
+                moneyness_boost = 1.01  # +1% score boost
+                opp["moneyness_quality"] = "good"
+            elif moneyness == "OTM" and abs(moneyness_pct) >= 3.0:
+                # Far OTM (3%+ OTM) = lottery tickets, low quality
+                moneyness_boost = 0.85  # -15% score penalty
+                opp["moneyness_quality"] = "low"
+            else:
+                opp["moneyness_quality"] = "neutral"
+            
+            # Apply moneyness boost to current score
+            if "score" in opp and isinstance(opp["score"], (int, float)):
+                opp["score"] = round(opp["score"] * moneyness_boost, 2)
+
             enriched.append(opp)
 
         finviz_covered = sum(1 for o in enriched if o.get("insider_source") == "finviz")
