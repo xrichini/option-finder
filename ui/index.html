@@ -488,9 +488,38 @@
             if (btn) btn.disabled = true;
             setStatus('scanning', 'Loading…');
             try {
-                const r = await fetch('./data/latest_scan.json?_=' + Date.now());
-                if (!r.ok) throw new Error('HTTP ' + r.status);
-                const data = await r.json();
+                // Try multiple paths for flexibility (local dev vs GitHub Pages)
+                const paths = [
+                    './data/latest_scan.json',
+                    '/data/latest_scan.json',
+                    './latest_scan.json',
+                ];
+                
+                let data = null;
+                let lastError = null;
+                
+                for (const path of paths) {
+                    try {
+                        const url = path + '?_=' + Date.now();
+                        console.log('📡 Attempting fetch: ' + url);
+                        const r = await fetch(url);
+                        if (r.ok) {
+                            data = await r.json();
+                            console.log('✅ Loaded from: ' + path);
+                            break;
+                        } else {
+                            console.log('⚠️  ' + path + ' → HTTP ' + r.status);
+                            lastError = 'HTTP ' + r.status + ' at ' + path;
+                        }
+                    } catch (e) {
+                        console.log('⚠️  ' + path + ' failed: ' + e.message);
+                        lastError = e.message;
+                    }
+                }
+                
+                if (!data) {
+                    throw new Error('Failed all paths: ' + lastError + '. Verify scan has run and file exists at data/latest_scan.json');
+                }
 
                 if (data._placeholder) {
                     showError('No scan data yet — GitHub Actions will populate this file during market hours.');
