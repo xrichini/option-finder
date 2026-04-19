@@ -1040,9 +1040,7 @@
                 // Re-render badges with sparklines after data arrives
                 _updateSparklinesBadges();
             } catch(e) {
-                console.debug('Trend data fetch error:', e);
-            }
-        }
+
 
         function _updateSparklinesBadges() {
             // Update sparklines in the rendered table after trend data arrives
@@ -1062,9 +1060,25 @@
                 
                 if (ordFlowCellIdx >= 0 && ordFlowCellIdx < cells.length) {
                     const ordFlowCell = cells[ordFlowCellIdx];
-                    if (_flowTrendCache[opt.option_symbol]) {\n                        const flowSparkline = _makeFlowTrendSparkline(_flowTrendCache[opt.option_symbol]);\n                        if (!ordFlowCell.innerHTML.includes('svg')) {\n                            ordFlowCell.innerHTML += flowSparkline;\n                        }\n                    }\n                }\n                \n                if (crushProbCellIdx >= 0 && crushProbCellIdx < cells.length) {\n                    const crushProbCell = cells[crushProbCellIdx];\n                    if (_crushTrendCache[opt.option_symbol]) {\n                        const crushSparkline = _makeCrushTrendSparkline(_crushTrendCache[opt.option_symbol]);\n                        if (!crushProbCell.innerHTML.includes('svg')) {\n                            crushProbCell.innerHTML += crushSparkline;\n                        }\n                    }\n                }\n            });\n                console.debug('Trend data fetch error:', e);
-            }
-        }
+                    if (_flowTrendCache[opt.option_symbol]) {
+                        const flowSparkline = _makeFlowTrendSparkline(_flowTrendCache[opt.option_symbol]);
+                        if (!ordFlowCell.innerHTML.includes('svg')) {
+                            ordFlowCell.innerHTML += flowSparkline;
+                        }
+                    }
+                }
+                
+                if (crushProbCellIdx >= 0 && crushProbCellIdx < cells.length) {
+                    const crushProbCell = cells[crushProbCellIdx];
+                    if (_crushTrendCache[opt.option_symbol]) {
+                        const crushSparkline = _makeCrushTrendSparkline(_crushTrendCache[opt.option_symbol]);
+                        if (!crushProbCell.innerHTML.includes('svg')) {
+                            crushProbCell.innerHTML += crushSparkline;
+                        }
+                    }
+                }
+            });
+
 
         function _updateSparklinesBadges() {
             // Update sparklines in the rendered table after trend data arrives
@@ -1084,7 +1098,25 @@
                 
                 if (ordFlowCellIdx >= 0 && ordFlowCellIdx < cells.length) {
                     const ordFlowCell = cells[ordFlowCellIdx];
-                    if (_flowTrendCache[opt.option_symbol]) {\n                        const flowSparkline = _makeFlowTrendSparkline(_flowTrendCache[opt.option_symbol]);\n                        if (!ordFlowCell.innerHTML.includes('svg')) {\n                            ordFlowCell.innerHTML += flowSparkline;\n                        }\n                    }\n                }\n                \n                if (crushProbCellIdx >= 0 && crushProbCellIdx < cells.length) {\n                    const crushProbCell = cells[crushProbCellIdx];\n                    if (_crushTrendCache[opt.option_symbol]) {\n                        const crushSparkline = _makeCrushTrendSparkline(_crushTrendCache[opt.option_symbol]);\n                        if (!crushProbCell.innerHTML.includes('svg')) {\n                            crushProbCell.innerHTML += crushSparkline;\n                        }\n                    }\n                }\n            });\n        }
+                    if (_flowTrendCache[opt.option_symbol]) {
+                        const flowSparkline = _makeFlowTrendSparkline(_flowTrendCache[opt.option_symbol]);
+                        if (!ordFlowCell.innerHTML.includes('svg')) {
+                            ordFlowCell.innerHTML += flowSparkline;
+                        }
+                    }
+                }
+                
+                if (crushProbCellIdx >= 0 && crushProbCellIdx < cells.length) {
+                    const crushProbCell = cells[crushProbCellIdx];
+                    if (_crushTrendCache[opt.option_symbol]) {
+                        const crushSparkline = _makeCrushTrendSparkline(_crushTrendCache[opt.option_symbol]);
+                        if (!crushProbCell.innerHTML.includes('svg')) {
+                            crushProbCell.innerHTML += crushSparkline;
+                        }
+                    }
+                }
+            });
+        }
 
         function createFlowRow(opt) {
             const type = (opt.option_type || '').toLowerCase();
