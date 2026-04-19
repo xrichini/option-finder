@@ -390,16 +390,16 @@
         <!-- Row 2: Vol, OI, Score, IV -->
         <div class="fp-row">
             <label>Min Vol
-                <input id="fpMinVol" type="number" value="500" min="0" style="width:65px">
+                <input id="fpMinVol" type="number" value="1000" min="0" style="width:65px">
             </label>
             <label>Min OI
                 <input id="fpMinOi" type="number" value="100" min="0" style="width:55px">
             </label>
             <label>Score ≥
-                <input id="fpScore" type="number" value="30" min="0" max="100" style="width:55px">
+                <input id="fpScore" type="number" value="50" min="0" max="100" style="width:55px">
             </label>
             <label>IV% ≥
-                <input id="fpMinIv" type="number" value="0" min="0" style="width:55px">
+                <input id="fpMinIv" type="number" value="30" min="0" style="width:55px">
             </label>
             <label id="fpSiRow" style="display:none">SI Min%
                 <input id="fpSiMin" type="number" value="20" min="0" max="100" style="width:55px">
@@ -488,9 +488,38 @@
             if (btn) btn.disabled = true;
             setStatus('scanning', 'Loading…');
             try {
-                const r = await fetch('./data/latest_scan.json?_=' + Date.now());
-                if (!r.ok) throw new Error('HTTP ' + r.status);
-                const data = await r.json();
+                // Try multiple paths for flexibility (local dev vs GitHub Pages)
+                const paths = [
+                    './data/latest_scan.json',
+                    '/data/latest_scan.json',
+                    './latest_scan.json',
+                ];
+                
+                let data = null;
+                let lastError = null;
+                
+                for (const path of paths) {
+                    try {
+                        const url = path + '?_=' + Date.now();
+                        console.log('📡 Attempting fetch: ' + url);
+                        const r = await fetch(url);
+                        if (r.ok) {
+                            data = await r.json();
+                            console.log('✅ Loaded from: ' + path);
+                            break;
+                        } else {
+                            console.log('⚠️  ' + path + ' → HTTP ' + r.status);
+                            lastError = 'HTTP ' + r.status + ' at ' + path;
+                        }
+                    } catch (e) {
+                        console.log('⚠️  ' + path + ' failed: ' + e.message);
+                        lastError = e.message;
+                    }
+                }
+                
+                if (!data) {
+                    throw new Error('Failed all paths: ' + lastError + '. Verify scan has run and file exists at data/latest_scan.json');
+                }
 
                 if (data._placeholder) {
                     showError('No scan data yet — GitHub Actions will populate this file during market hours.');
@@ -621,11 +650,11 @@
 
         // Default filter values per universe
         const UNIVERSE_DEFAULTS = {
-            sp500:          { minVol: 500,  minOi: 100, score: 30, iv: 0  },
-            nasdaq100:      { minVol: 500,  minOi: 100, score: 30, iv: 0  },
-            dow30:          { minVol: 200,  minOi: 50,  score: 25, iv: 0  },
-            short_interest: { minVol: 100,  minOi: 25,  score: 30, iv: 0  },
-            manual:         { minVol: 50,   minOi: 1,   score: 30, iv: 0  },
+            sp500:          { minVol: 1000, minOi: 100, score: 50, iv: 30  },
+            nasdaq100:      { minVol: 1000, minOi: 100, score: 50, iv: 30  },
+            dow30:          { minVol: 1000, minOi: 100, score: 50, iv: 30  },
+            short_interest: { minVol: 500,  minOi: 25,  score: 50, iv: 30  },
+            manual:         { minVol: 100,  minOi: 1,   score: 30, iv: 0   },
         };
 
         function updateUniverseUI() {
@@ -709,10 +738,10 @@
             document.getElementById('fpSide').value = 'both';
             document.getElementById('fpDteMin').value = '3';
             document.getElementById('fpDteMax').value = '14';
-            document.getElementById('fpMinVol').value = '500';
+            document.getElementById('fpMinVol').value = '1000';
             document.getElementById('fpMinOi').value = '100';
-            document.getElementById('fpScore').value = '30';
-            document.getElementById('fpMinIv').value = '0';
+            document.getElementById('fpScore').value = '50';
+            document.getElementById('fpMinIv').value = '30';
             updateUniverseUI();
             applyClientFilters();
         }
