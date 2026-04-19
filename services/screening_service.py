@@ -121,6 +121,48 @@ class ScreeningService:
         except Exception as e:
             logger.warning(f"Erreur enrich_with_history: {e}")
 
+        # #5: PUT/CALL FLOW RATIO — Détecte les patterns de hedging/accumulation
+        try:
+            pc_bonuses = self._calculate_put_call_flow_ratio(opportunities)
+            for opp in opportunities:
+                pc_bonus = pc_bonuses.get(opp.option_symbol, 0.0)
+                if pc_bonus != 0.0:
+                    old_score = opp.whale_score
+                    opp.whale_score = min(100.0, opp.whale_score + pc_bonus)
+                    signal = (
+                        f"Call accumulation (+{pc_bonus:.0f})"
+                        if pc_bonus > 0
+                        else f"Defensive hedging ({pc_bonus:.0f})"
+                    )
+                    opp.reasoning = f"{opp.reasoning} | {signal}".strip(" |")
+                    logger.debug(
+                        f"{opp.option_symbol}: PC Flow {old_score:.1f}→{opp.whale_score:.1f}"
+                    )
+            logger.info(f"✅ Put/Call Flow: bonuses appliqués à whale_score")
+        except Exception as e:
+            logger.warning(f"⚠️  Put/Call Flow non disponible ({e})")
+
+        # #3: OI MOMENTUM — Détecte les nouvelles positions ouvertes
+        try:
+            oi_bonuses = self._calculate_oi_momentum(opportunities)
+            for opp in opportunities:
+                oi_bonus = oi_bonuses.get(opp.option_symbol, 0.0)
+                if oi_bonus != 0.0:
+                    old_score = opp.whale_score
+                    opp.whale_score = min(100.0, opp.whale_score + oi_bonus)
+                    signal = (
+                        f"OI spike (+{oi_bonus:.0f})"
+                        if oi_bonus > 0
+                        else f"OI decline ({oi_bonus:.0f})"
+                    )
+                    opp.reasoning = f"{opp.reasoning} | {signal}".strip(" |")
+                    logger.debug(
+                        f"{opp.option_symbol}: OI Momentum {old_score:.1f}→{opp.whale_score:.1f}"
+                    )
+            logger.info(f"✅ OI Momentum: bonuses appliqués à whale_score")
+        except Exception as e:
+            logger.warning(f"⚠️  OI Momentum non disponible ({e})")
+
         return opportunities
 
     async def screen_options_with_ai(
@@ -630,6 +672,115 @@ class ScreeningService:
         except Exception as e:
             logger.error(f"Erreur calcul whale score: {e}")
             return 0.0
+
+    def _calculate_put_call_flow_ratio(
+        self, opportunities: List[OptionsOpportunity]
+    ) -> Dict[str, float]:
+        """
+        Calcule le ratio put/call par underlying et retourne les bonus pour chaque opp.
+
+        Détecte les patterns de hedging/buying:
+        - Put/Call ratio > 1.5 = Defensive buying (bearish signal, -1 bonus)
+        - Put/Call ratio < 0.67 = Call accumulation (bullish signal, +2 bonus)
+        - Put/Call ratio 0.67-1.5 = Normal (neutral, 0 bonus)
+
+        Returns:
+            Dict[option_symbol] -> bonus_points (float)
+        """
+        try:
+            # Agrégation volumes par underlying et option_type
+            underlying_flows: Dict[str, Dict[str, int]] = {}
+
+            for opp in opportunities:
+                und = opp.underlying_symbol
+                if und not in underlying_flows:
+                    underlying_flows[und] = {"call": 0, "put": 0}
+
+                opt_type = str(opp.option_type).upper()
+                if opt_type == "CALL":
+                    underlying_flows[und]["call"] += opp.volume
+                elif opt_type == "PUT":
+                    underlying_flows[und]["put"] += opp.volume
+
+            # Calcul bonus par option
+            bonuses: Dict[str, float] = {}
+            for opp in opportunities:
+                und = opp.underlying_symbol
+                call_vol = underlying_flows[und]["call"]
+                put_vol = underlying_flows[und]["put"]
+
+                ratio = put_vol / max(call_vol, 1)  # Avoid division by zero
+                bonus = 0.0
+
+                if ratio > 1.5:
+                    # Hedging/defensive buying detected
+                    bonus = -1.0 if str(opp.option_type).upper() == "CALL" else +1.5
+                elif ratio < 0.67:
+                    # Call accumulation detected
+                    bonus = +2.0 if str(opp.option_type).upper() == "CALL" else -1.0
+
+                bonuses[opp.option_symbol] = bonus
+
+            logger.debug(
+                f"Put/Call Flow: calculé pour {len(underlying_flows)} underlyings"
+            )
+            return bonuses
+
+        except Exception as e:
+            logger.warning(f"Erreur calcul put/call flow: {e}")
+            return {}
+
+    def _calculate_oi_momentum(
+        self, opportunities: List[OptionsOpportunity]
+    ) -> Dict[str, float]:
+        """
+        Calcule le momentum OI en comparant OI actuelle avec OI hier (depuis DB).
+
+        Bonus:
+        - OI +30%+ = +3 points (new big positions)
+        - OI +15-30% = +1 point (moderate increase)
+        - OI -20% ou moins = -2 points (positions closing)
+
+        Returns:
+            Dict[option_symbol] -> bonus_points (float)
+        """
+        try:
+            bonuses: Dict[str, float] = {}
+
+            for opp in opportunities:
+                try:
+                    # Query yesterday's OI from history_service
+                    yesterday_oi = history_service.get_yesterday_oi(opp.option_symbol)
+
+                    if yesterday_oi is None or yesterday_oi <= 0:
+                        bonuses[opp.option_symbol] = 0.0
+                        continue
+
+                    # Calculate OI change %
+                    oi_change_pct = (
+                        (opp.open_interest - yesterday_oi) / yesterday_oi
+                    ) * 100
+                    bonus = 0.0
+
+                    if oi_change_pct >= 30:
+                        bonus = 3.0  # New big positions opening
+                    elif oi_change_pct >= 15:
+                        bonus = 1.0  # Moderate increase
+                    elif oi_change_pct <= -20:
+                        bonus = -2.0  # Positions closing
+
+                    bonuses[opp.option_symbol] = bonus
+
+                except Exception as e:
+                    logger.debug(f"OI Momentum error for {opp.option_symbol}: {e}")
+                    bonuses[opp.option_symbol] = 0.0
+
+            logger.debug(f"OI Momentum: calculé pour {len(opportunities)} options")
+            return bonuses
+
+        except Exception as e:
+            logger.warning(f"Erreur calcul OI momentum: {e}")
+            return {}
 
     async def get_symbol_suggestions(
         self, min_market_cap: Optional[int] = None, min_volume: Optional[int] = None

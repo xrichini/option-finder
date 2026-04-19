@@ -81,17 +81,20 @@ Last commit: `46d90a4` — Insider enrichment via Finviz (97 tickers with recent
     - Source: Tradier bid/ask spreads
     - Impact: +7.4 score differential for institutional options
 
-  - [ ] **#3: OI Momentum** 📊 MOYEN
+  - [ ] **#3: OI Momentum** 📊 ✅ DONE
     - OI change vs day before = new positioning detection
-    - OI up 30%+ = new big positions opening
+    - OI up 30%+ = +3 bonus points
+    - OI up 15-30% = +1 bonus point
+    - OI down 20%+ = -2 bonus points
     - Source: Compare with `options_history.db` daily snapshots
-    - Effort: Medium (DB queries + comparative calc)
+    - Appliqué à whale_score après enrichissement historique
 
-  - [ ] **#5: Put/Call Flow Ratio** 📊 MOYEN
+  - [ ] **#5: Put/Call Flow Ratio** 📊 ✅ DONE
     - Unusual put volume vs calls = defensive/hedge buying
-    - Calculate per underlying, flag if extreme ratio
-    - Source: Sum of put/call volumes in scan results
-    - Effort: Low (simple aggregation)
+    - Put/Call ratio > 1.5 = Defensive (-1 for calls, +1.5 for puts)
+    - Put/Call ratio < 0.67 = Call accumulation (+2 for calls, -1 for puts)
+    - Source: Aggregate put/call volumes per underlying in scan results
+    - Appliqué à whale_score pour détecter patterns de hedging
 
 - [ ] **Tests sur FMP quota réel**
   - Faire tourner S&P500 complet et mesurer consommation quota FMP
@@ -133,6 +136,10 @@ Last commit: `46d90a4` — Insider enrichment via Finviz (97 tickers with recent
 
 ## ✅ Fait (récent)
 
+- [x] **Put/Call Flow Ratio** — Detects hedging/accumulation patterns (+2 bonus for call accumulation, -1 for defensive puts)
+- [x] **OI Momentum** — Flags new positions (+3 for OI +30%, -2 for -20%)
+- [x] History DB integration with scan_daemon.py (options_history.db now populated by GHA)
+- [x] GHA workflow fix: deploy now triggers reliably after scan via workflow_run
 - [x] FMP stable API migration (`/v3/` → `/stable/`)
 - [x] Beta column (color-coded: gris < 1.3 / orange ≥ 1.3 / rouge ≥ 2)
 - [x] Earnings ⚡ column (7j calendar)

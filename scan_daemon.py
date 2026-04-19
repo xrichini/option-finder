@@ -298,6 +298,25 @@ def do_scan(universe: str, params: dict):
             )
             # opportunities remain unmodified if enrichment fails
 
+        # Feed options_history.db for trend analysis (IV Rank, OI Spike, Vol Trend)
+        logger.info("📅 Enregistrement dans options_history.db...")
+        try:
+            from services.history_service import HistoryService
+
+            history_svc = HistoryService()
+            hist_count = history_svc.record_scan_results(opportunities)
+            logger.info(f"✅ {hist_count} lignes dans options_history.db")
+
+            # Enrich with historical metrics (IV Rank, OI Spike, Vol Trend, etc.)
+            history_svc.enrich_with_history(opportunities)
+            logger.info(
+                "✅ Enrichissement historique appliqué (IV Rank, OI Spike, Vol Trend)"
+            )
+        except Exception as e:
+            logger.warning(
+                f"⚠️  Enrichissement historique non disponible ({e}), continuant sans..."
+            )
+
         # B1: Purge expired options from database (keep 30 days of history)
         logger.info("🧹 Purge des options expirées...")
         try:

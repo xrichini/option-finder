@@ -1,10 +1,13 @@
 name: Deploy GitHub Pages
 
 on:
+  workflow_run:
+    workflows: ["Option Scan (GHA)"]
+    types: [completed]
+    branches: [main]
   push:
     branches: [main]
     paths:
-      - "data/latest_scan.json"
       - "ui/**"
   workflow_dispatch:
 
@@ -12,6 +15,11 @@ jobs:
   deploy:
     name: Build & deploy static UI
     runs-on: ubuntu-latest
+    # Run on successful scan completion, UI changes, or manual trigger
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     permissions:
       contents: write   # nécessaire pour pousser sur gh-pages
 

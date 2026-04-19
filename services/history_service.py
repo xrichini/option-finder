@@ -345,6 +345,33 @@ class HistoryService:
         finally:
             con.close()
 
+    def get_yesterday_oi(self, option_symbol: str) -> Optional[float]:
+        """
+        Récupère l'Open Interest d'hier pour une option.
+        Utilisé pour calculer le OI Momentum (OI change % day-over-day).
+
+        Retourne None si pas de données hier ou si DB n'existe pas.
+        """
+        con = self._open()
+        if con is None:
+            return None
+        try:
+            yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+            row = con.execute(
+                """
+                SELECT open_interest FROM option_history
+                WHERE option_symbol = ? AND scan_date = ?
+                LIMIT 1
+                """,
+                (option_symbol, yesterday),
+            ).fetchone()
+            return row[0] if row and row[0] else None
+        except Exception as e:
+            logger.debug(f"get_yesterday_oi({option_symbol}): {e}")
+            return None
+        finally:
+            con.close()
+
     # ------------------------------------------------------------------
     # Enrichissement batch — optimisé (une requête IV par underlying)
     # ------------------------------------------------------------------
