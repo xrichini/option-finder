@@ -417,25 +417,25 @@ class HistoryService:
     ) -> Tuple[float, str]:
         """
         Phase 2: Calculate IV crush risk.
-        
+
         Returns:
             (iv_crush_ratio, iv_crush_signal)
             - iv_crush_ratio: current_iv / 52w_avg_iv (>1.5 = high risk)
             - iv_crush_signal: 'high_risk'|'normal'|'low_risk'
-        
+
         High IV crush risk (>1.5x) = likely mean reversion to lower IV
         This suggests earnings or volatility event priced in.
         """
         if not current_iv or current_iv <= 0:
             return (0.0, "normal")
-        
+
         con = self._open()
         if con is None:
             return (0.0, "normal")
-        
+
         try:
             cutoff = (datetime.now() - timedelta(days=window_days)).strftime("%Y-%m-%d")
-            
+
             # Get 52-week average IV for this contract
             row = con.execute(
                 """
@@ -444,25 +444,25 @@ class HistoryService:
                 """,
                 (option_symbol, cutoff),
             ).fetchone()
-            
+
             iv_52w_avg = row[0] if row and row[0] else None
-            
+
             if not iv_52w_avg or iv_52w_avg <= 0:
                 return (0.0, "normal")
-            
+
             # Calculate crush risk: how much higher current IV is vs historical avg
             iv_crush_ratio = current_iv / iv_52w_avg
-            
+
             # Classify risk
             if iv_crush_ratio >= 1.5:
                 iv_crush_signal = "high_risk"  # Elevated IV, likely to compress
             elif iv_crush_ratio >= 1.2:
-                iv_crush_signal = "normal"     # Moderately elevated
+                iv_crush_signal = "normal"  # Moderately elevated
             else:
-                iv_crush_signal = "low_risk"   # Below historical average
-            
+                iv_crush_signal = "low_risk"  # Below historical average
+
             return (round(iv_crush_ratio, 2), iv_crush_signal)
-            
+
         except Exception as e:
             logger.debug(f"get_iv_crush_risk({option_symbol}): {e}")
             return (0.0, "normal")
@@ -474,23 +474,23 @@ class HistoryService:
     ) -> Tuple[float, str]:
         """
         Phase 2: Calculate fill velocity (contracts/minute).
-        
+
         Returns:
             (fill_velocity, fill_velocity_signal)
             - fill_velocity: contracts/minute during recent window
             - fill_velocity_signal: 'high_velocity'|'normal'|'low_velocity'
-        
+
         High velocity (>5000 contracts/min) = aggressive institutional buying
         Normal (1000-5000) = steady institutional interest
         Low (<1000) = quiet accumulation
         """
         if not option_symbol:
             return (0.0, "normal")
-        
+
         con = self._open()
         if con is None:
             return (0.0, "normal")
-        
+
         try:
             # Get total volume from recent history (approximate velocity)
             # We use volume_1d as proxy for activity level
@@ -501,26 +501,26 @@ class HistoryService:
                 """,
                 (option_symbol,),
             ).fetchone()
-            
+
             total_vol = row[0] if row and row[0] else 0
-            
+
             if total_vol <= 0:
                 return (0.0, "normal")
-            
+
             # Approximate velocity: assume 6.5 hours of trading
             # More refined when we have minute-level data
             fill_velocity = round(total_vol / 390, 0)  # 390 minutes in trading day
-            
+
             # Classify velocity
             if fill_velocity >= 5000:
                 velocity_signal = "high_velocity"  # Exceptional institutional interest
             elif fill_velocity >= 1000:
-                velocity_signal = "normal"         # Steady activity
+                velocity_signal = "normal"  # Steady activity
             else:
-                velocity_signal = "low_velocity"   # Below average activity
-            
+                velocity_signal = "low_velocity"  # Below average activity
+
             return (fill_velocity, velocity_signal)
-            
+
         except Exception as e:
             logger.debug(f"get_fill_velocity_metric({option_symbol}): {e}")
             return (0.0, "normal")
@@ -620,16 +620,16 @@ class HistoryService:
                 size_pct, vol_30d_avg = self.get_size_percentile(sym, vol)
                 _set(opp, "size_percentile", size_pct)
                 _set(opp, "volume_30d_avg", vol_30d_avg)
-                
+
                 # Phase 2: IV crush risk & fill velocity
                 iv = float(_get(opp, "implied_volatility", 0) or 0)
                 if iv > 0 and iv <= 1:
                     iv *= 100  # normalize to percentage if needed
-                
+
                 iv_crush_ratio, iv_crush_signal = self.get_iv_crush_risk(sym, iv)
                 _set(opp, "iv_crush_risk", iv_crush_ratio)
                 _set(opp, "iv_crush_signal", iv_crush_signal)
-                
+
                 fill_vel, vel_signal = self.get_fill_velocity_metric(sym)
                 _set(opp, "fill_velocity", fill_vel)
                 _set(opp, "fill_velocity_signal", vel_signal)

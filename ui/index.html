@@ -767,6 +767,12 @@
                 ['StkVol',      o => o.stock_volume || 0],
                 ['Sector',      o => o.sector || ''],
                 ['Beta',        o => o.beta != null ? Number(o.beta).toFixed(2) : ''],
+                ['MoneyQuality', o => o.moneyness_quality || ''],
+                ['SizePercentile', o => Number(o.size_percentile || 0).toFixed(1)],
+                ['Vol30dAvg',   o => Number(o.volume_30d_avg || 0).toFixed(0)],
+                ['IVCrushRisk', o => Number(o.iv_crush_risk || 0).toFixed(2)],
+                ['FillVelocity',o => Number(o.fill_velocity || 0).toFixed(0)],
+                ['FillAggression', o => o.fill_aggression || ''],
                 ['Score',       o => Number(o.whale_score || o.hybrid_score || 0).toFixed(1)],
                 ['Symbol_OCC',  o => o.option_symbol || ''],
             ];
@@ -876,6 +882,10 @@
             { key: '_beta',       label: 'Beta',       sortKey: 'beta',           title: 'Beta vs S&P500' },
             { key: '_insider',    label: 'Insider',    sortKey: 'insider_signal', title: 'Activité insiders 30j' },
             { key: 'earnings_flag', label: '⚡',        sortKey: 'earnings_soon', title: 'Earnings dans 7j' },
+            { key: '_moneyness_badge', label: 'Mon$',  sortKey: 'moneyness_quality', title: 'Moneyness Quality Signal' },
+            { key: '_size_pct',   label: 'Size%',      sortKey: 'size_percentile',  title: '30-day Volume Percentile' },
+            { key: '_iv_crush',   label: 'IVCrush',    sortKey: 'iv_crush_risk',    title: 'IV Crush Risk' },
+            { key: '_fill_vel',   label: 'FillVel',    sortKey: 'fill_velocity',    title: 'Fill Velocity (contracts/min)' },
             { key: '_score',      label: 'Score',      sortKey: 'whale_score' },
         ];
 
@@ -1019,6 +1029,52 @@
                 ? `<span title="${earningsDate}\u00a0${earningsTiming}" style="cursor:default;font-size:1.1em" class="earnings-badge">⚡</span>`
                 : '<span style="color:#4a5568">--</span>';
 
+            // Phase 1 & 2: Signal Badges
+            // Moneyness Quality Badge
+            const moneyQuality = opt.moneyness_quality || 'unknown';
+            const moneyBadgeHtml = moneyQuality === 'premium'
+                ? '<span style="background:#48bb78;color:#fff;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">ATM</span>'
+                : moneyQuality === 'good'
+                ? '<span style="background:#38a169;color:#fff;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">GOOD</span>'
+                : moneyQuality === 'defensive'
+                ? '<span style="background:#319795;color:#fff;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">ITM</span>'
+                : moneyQuality === 'lottery'
+                ? '<span style="background:#ed8936;color:#fff;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">🎰</span>'
+                : '<span style="color:#4a5568">--</span>';
+
+            // Size Percentile Badge
+            const sizePct = Number(opt.size_percentile || 0);
+            let sizeBadgeHtml = '<span style="color:#4a5568">--</span>';
+            if (sizePct >= 95) {
+                sizeBadgeHtml = '<span style="background:#e53e3e;color:#fff;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">🟢🟢 1%</span>';
+            } else if (sizePct >= 80) {
+                sizeBadgeHtml = '<span style="background:#f6ad55;color:#fff;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">🟢 5%</span>';
+            } else if (sizePct >= 75) {
+                sizeBadgeHtml = '<span style="background:#ecc94b;color:#000;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">🟡 25%</span>';
+            }
+
+            // IV Crush Risk Badge
+            const ivCrush = Number(opt.iv_crush_risk || 0);
+            let ivCrushBadgeHtml = '<span style="color:#4a5568">--</span>';
+            if (ivCrush >= 1.5) {
+                ivCrushBadgeHtml = '<span style="background:#e53e3e;color:#fff;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">⚠️ HIGH</span>';
+            } else if (ivCrush >= 1.2) {
+                ivCrushBadgeHtml = '<span style="background:#f6ad55;color:#fff;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">MED</span>';
+            } else if (ivCrush > 0) {
+                ivCrushBadgeHtml = '<span style="background:#68d391;color:#000;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">LOW</span>';
+            }
+
+            // Fill Velocity Badge
+            const fillVel = Number(opt.fill_velocity || 0);
+            let fillVelBadgeHtml = '<span style="color:#4a5568">--</span>';
+            if (fillVel >= 5000) {
+                fillVelBadgeHtml = '<span style="background:#e53e3e;color:#fff;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">🔥 HI</span>';
+            } else if (fillVel >= 1000) {
+                fillVelBadgeHtml = '<span style="background:#38a169;color:#fff;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">OK</span>';
+            } else if (fillVel > 0) {
+                fillVelBadgeHtml = '<span style="background:#cbd5e0;color:#000;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">LO</span>';
+            }
+
             // Timestamp
             const ts = opt.timestamp ? new Date(opt.timestamp) : null;
             const timeStr = ts ? ts.toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false}) : '--:--:--';
@@ -1097,6 +1153,10 @@
                 <td style="text-align:center">${betaHtml}</td>
                 <td style="text-align:center">${insiderHtml}</td>
                 <td style="text-align:center">${earningsHtml}</td>
+                <td style="text-align:center">${moneyBadgeHtml}</td>
+                <td style="text-align:center">${sizeBadgeHtml}</td>
+                <td style="text-align:center" title="Current IV / 52w Avg (${ivCrush.toFixed(2)}x)">${ivCrushBadgeHtml}</td>
+                <td style="text-align:center" title="${fillVel.toFixed(0)} contracts/min">${fillVelBadgeHtml}</td>
                 <td data-field="score">${scoreCell}</td>
             </tr>`;
         }
