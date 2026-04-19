@@ -236,11 +236,13 @@ async def run_scan_async(symbols: list, params: dict) -> list:
 # ── Result persistence ──────────────────────────────────────────────────────
 
 
-def write_results(opportunities: list, universe: str, symbols: list, output_path: str = None):
+def write_results(
+    opportunities: list, universe: str, symbols: list, output_path: str = None
+):
     """
     Écrit les résultats dans data/latest_scan.json (écriture atomique).
     Le fichier est lu par le endpoint GET /api/daemon/latest-scan.
-    
+
     Args:
         opportunities: Liste des opportunités trouvées
         universe: Univers scanné (nasdaq100, sp500, dow30)
@@ -280,7 +282,7 @@ def do_scan(universe: str, params: dict, output_path: str = None):
     """
     Cycle complet: résolution des symboles + scan + enrichissement + sauvegarde.
     Bloquant (utilise asyncio.run pour exécuter la partie async).
-    
+
     Args:
         universe: Univers à scanner (nasdaq100, sp500, dow30)
         params: Paramètres de screening

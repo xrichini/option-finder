@@ -7,7 +7,9 @@
 ### Détection d'opportunités options avancée
 ✅ **Big Call Buying** - Détection des gros volumes d'achat de calls  
 ✅ **High Short Interest** - Identification des actions à fort intérêt court  
-✅ **Whale Score Algorithm** - Score propriétaire 0-100  
+✅ **Whale Score Algorithm** - Score propriétaire 0-100 avec signaux de flux  
+✅ **Multi-Universe Scanning** - NASDAQ100, S&P 500, DOW 30 scannés en parallèle (~630 opps/scan)  
+✅ **Order Flow Signals** - Put/Call Flow Ratio + OI Momentum bonus calculation  
 ✅ **Analyse temps réel** - WebSocket pour mises à jour live  
 ✅ **IA intégrée** - Recommandations intelligentes  
 
@@ -20,8 +22,9 @@
 | Expiration | Date d'expiration |
 | Volume | Volume du jour |
 | Open Interest | OI actuel |
-| Whale Score | Score 0-100 |
+| Whale Score | Score 0-100 avec historique (sparkline) |
 | AI Recommendation | Recommandation IA |
+| Universe | NASDAQ100 / S&P 500 / DOW 30 |
 
 ## 🏠 Architecture du projet
 
@@ -48,6 +51,29 @@ squeeze-finder/
 ├── tests/                   # 🧪 Tests organisés (36 fichiers)
 └── requirements.txt         # Dépendances FastAPI
 ```
+
+## 🔍 Multi-Universe Scanning
+
+### Stratégie parallèle
+**GitHub Actions** exécute 3 scans simultanément toutes les 15 minutes pendant les heures de marché :
+- **NASDAQ100** (~100 symbols) → 80-90 opportunités
+- **S&P 500** (~500 symbols) → 150-200 opportunités  
+- **DOW 30** (~30 symbols) → 20-30 opportunités
+
+### Résultat fusionné
+- ~630 opportunités totales par scan
+- Dédupliqué par `option_symbol`
+- Chaque opportunité taggée avec `universe` field
+- Stockée dans `data/latest_scan.json`
+
+### Filtrage côté client
+Interface web permet de filtrer par univers :
+- "Tous les univers" (default) → combine les 3 sources
+- "NASDAQ 100" → big tech, croissance
+- "S&P 500" → large-cap diversifiés
+- "DOW 30" → blue chips classiques
+
+**Avantage**: Pas de re-scan nécessaire, filtrage instantané côté client
 
 ## 🚀 Installation et démarrage
 

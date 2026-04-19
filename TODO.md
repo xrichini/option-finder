@@ -136,6 +136,14 @@ Last commit: `46d90a4` — Insider enrichment via Finviz (97 tickers with recent
 
 ## ✅ Fait (récent)
 
+- [x] **Multi-Universe Parallel Scanning** — GHA matrix job (nasdaq100, sp500, dow30 in parallel)
+  - 3 parallel jobs execute independently every 15 minutes
+  - Each outputs to `data/scan_*.json` with universe field
+  - Merge job combines + deduplicates to `data/latest_scan.json` (~630 opps/day)
+  - UI universe filter for client-side filtering (no re-scan needed)
+  - Rate limiting safe: 630 API calls spread over 5 min (vs 120 limit)
+  - History DB enriched 7x: From ~100 opps/day to ~630
+
 - [x] **Put/Call Flow Ratio** — Detects hedging/accumulation patterns (+2 bonus for call accumulation, -1 for defensive puts)
 - [x] **OI Momentum** — Flags new positions (+3 for OI +30%, -2 for -20%)
 - [x] History DB integration with scan_daemon.py (options_history.db now populated by GHA)
