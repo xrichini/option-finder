@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>🐳 Options Flow Screener</title>
-    <link rel="stylesheet" href="/ui/advanced-filters.css">
+    <link rel="stylesheet" href="./advanced-filters.css">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -1673,11 +1673,15 @@
 
         function updateSidebarStats() {}  // deprecated stub
 
-        // Initialize advanced filtering
+    </script>
+    <script src="./advanced-filters.js"></script>
+    <script>
+        // Initialize advanced filtering after script loads
         document.addEventListener('DOMContentLoaded', () => {
-            initializeAdvancedFilters();
+            if (window.initializeAdvancedFilters) {
+                initializeAdvancedFilters();
+            }
         });
     </script>
-    <script src="/ui/advanced-filters.js"></script>
 </body>
 </html>
