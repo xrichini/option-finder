@@ -1,6 +1,6 @@
 # TODO — Squeeze Finder
 
-Last commit: `46d90a4` — Insider enrichment via Finviz (97 tickers with recent activity)
+Last commit: `6e0d1dd` — Sparklines, GHA DB persistence, Phase 1-3 signal enrichment
 
 ---
 
@@ -64,56 +64,50 @@ Last commit: `46d90a4` — Insider enrichment via Finviz (97 tickers with recent
 
 ### **Phase 1 (This Week) — Quick Wins**
 
-- [ ] **#1: Moneyness Bucket** (10 min)
-  - Filter out far OTM (lottery tickets)
-  - Add moneyness classification: ITM / ATM / OTM / FAR-OTM
-  - Boost whale_score: +3 if ATM (high gamma, liquid)
-  - Reduce whale_score: -5 if FAR OTM (< 0.85 moneyness)
-  - Source: Strike / Current_Stock_Price
-  - UI: Show moneyness indicator in table
+- [x] **#1: Moneyness Bucket** ✅ DONE
+  - ✅ Moneyness classification: ITM / ATM / OTM
+  - ✅ Score boost: ATM +5%, slightly OTM +2%, ITM +1%, far OTM -15%
+  - ✅ `moneyness_quality` badge: premium/good/low/neutral
+  - ✅ UI: Mon$ column with moneyness indicator bar
 
-- [ ] **#2: Bid-Ask Spread Aggression** (5 min)
-  - Calculate spread % = (Ask - Bid) / Mid * 100
-  - Classification: Aggressive (100%+) / Normal (50-100%) / Patient (< 50%)
-  - Add to whale_score: +2 if aggressive (conviction buying)
-  - UI: Show spread % in new column or tooltip
+- [x] **#2: Bid-Ask Spread Aggression** ✅ DONE
+  - ✅ `fill_aggression`: aggressive/normal/patient
+  - ✅ Score boost: +3% if aggressive (conviction buying)
+  - ✅ `aggression_signal` field in enriched output
 
-- [ ] **#3: Size Percentile (30min)**
-  - Track 30-day average volume per option contract
-  - Size_Percentile = Today_Volume / 30Day_Avg_Volume
-  - Categories: Top 1% (>3x) / Top 5% (>2x) / Top 25% (>1.3x) / Normal
-  - Add to whale_score: +5 if top 1%, +3 if top 5%
-  - UI: Show percentile badge (🟢🟢 / 🟢 / 🟡)
-  - Storage: Extend `options_history.db` with volume_30d_avg column
+- [x] **#3: Size Percentile** ✅ DONE
+  - ✅ `size_percentile`: 0-100 ranking vs 30-day avg volume
+  - ✅ `volume_30d_avg` stored in options_history.db
+  - ✅ Score boost: Top 1% +5%, Top 5% +3%, Top 25% +1%
+  - ✅ Badge: 🟢🟢 Top 1% / 🟢 Top 5% / 🟡 Top 25%
+  - ✅ UI: SIZE% column with badge
 
-### **Phase 2 (Next Week) — Data Integration**
+### **Phase 2 — Data Integration** ✅ DONE
 
-- [ ] **#4: Fill Velocity** (15 min)
-  - Calculate: Volume / Minutes_Since_Market_Open
-  - High velocity (> 5k/min) = institutional execution
-  - Add to whale_score: +3 if velocity > 5k/min
-  - UI: Show in real-time refresh cycle
+- [x] **#4: Fill Velocity** ✅ DONE
+  - ✅ `fill_velocity`: contracts/minute from options_history.db
+  - ✅ high_velocity / normal / low_velocity classification
+  - ✅ UI: FILLVEL column with badge
 
-- [ ] **#5: IV Crush Risk Score** (20 min)
-  - IV_Crush_Risk = Current_IV / 52w_Avg_IV (from FMP)
-  - Categories: High (>1.5) / Normal (1.0-1.5) / Safe (<1.0)
-  - Reduce whale_score: -3 if crush_risk > 1.5
-  - UI: Show IV crush indicator next to IVR column
-  - Integration: Use existing FMP 52-week IV data
+- [x] **#5: IV Crush Risk Score** ✅ DONE
+  - ✅ `iv_crush_risk`: current_iv / 52w_avg_iv ratio
+  - ✅ `iv_crush_signal`: high_risk / normal / low_risk
+  - ✅ `iv_52w_avg` stored in options_history.db
+  - ✅ UI: IVCRUSH column with badge
 
-### **Phase 3 (Enhancement) — Advanced**
+### **Phase 3 — Advanced** ✅ DONE
 
-- [ ] **#6: Order Flow Direction** (Medium)
-  - Classify as CALL_BUYING / CALL_SELLING / BALANCED based on volume distribution
-  - Requires: Tradier intraday bid/ask volume ratio tracking
-  - Add to whale_score: +2 if CALL_BUYING, -1 if CALL_SELLING
-  - UI: Flow direction badge (🟢 buying / 🔴 selling)
+- [x] **#6: Order Flow Direction** ✅ DONE
+  - ✅ `order_flow_strength`: 0-100 (>50 = bullish conviction)
+  - ✅ `order_flow_direction`: strong_bullish / bullish / neutral / bearish
+  - ✅ Computed from vol/OI trend analysis across 30-day history
+  - ✅ UI: ORDFLOW column with badge + sparkline
 
-- [ ] **#7: IV Crush Assessment** (Hard)
-  - Combine earnings calendar + current IV vs historical
-  - Flag contracts at risk of post-earnings IV crush
-  - Reduce whale_score: -5 if earnings within 7 days + IV_Crush_Risk > 2.0
-  - UI: ⚠️ WARNING badge on high-risk contracts
+- [x] **#7: IV Crush Assessment** ✅ DONE
+  - ✅ `crush_probability`: 0-100 (IV dispersion + iv_ratio)
+  - ✅ `crush_catalyst`: earnings / volatility_event / none
+  - ✅ `volatility_smile`: IV std dev across strikes
+  - ✅ UI: CRUSHPROB column with badge + sparkline
 
 ---
 
@@ -204,7 +198,7 @@ Last commit: `46d90a4` — Insider enrichment via Finviz (97 tickers with recent
     - Source: Tradier bid/ask spreads
     - Impact: +7.4 score differential for institutional options
 
-  - [ ] **#3: OI Momentum** 📊 ✅ DONE
+  - [x] **#3: OI Momentum** ✅ DONE
     - OI change vs day before = new positioning detection
     - OI up 30%+ = +3 bonus points
     - OI up 15-30% = +1 bonus point
@@ -212,7 +206,7 @@ Last commit: `46d90a4` — Insider enrichment via Finviz (97 tickers with recent
     - Source: Compare with `options_history.db` daily snapshots
     - Appliqué à whale_score après enrichissement historique
 
-  - [ ] **#5: Put/Call Flow Ratio** 📊 ✅ DONE
+  - [x] **#5: Put/Call Flow Ratio** ✅ DONE
     - Unusual put volume vs calls = defensive/hedge buying
     - Put/Call ratio > 1.5 = Defensive (-1 for calls, +1.5 for puts)
     - Put/Call ratio < 0.67 = Call accumulation (+2 for calls, -1 for puts)
@@ -270,6 +264,11 @@ Last commit: `46d90a4` — Insider enrichment via Finviz (97 tickers with recent
 - [x] **Put/Call Flow Ratio** — Detects hedging/accumulation patterns (+2 bonus for call accumulation, -1 for defensive puts)
 - [x] **OI Momentum** — Flags new positions (+3 for OI +30%, -2 for -20%)
 - [x] History DB integration with scan_daemon.py (options_history.db now populated by GHA)
+- [x] **GHA DB persistence fix** — options_history.db now committed after every scan (sparklines accumulate)
+- [x] **DB seeded** — 4508 historical records (Sep 2025 → Apr 2026) pushed to GitHub
+- [x] **Sparkline bugs fixed** — query by `underlying`, 30-day window, single-point dot rendering
+- [x] **Column alignment fixed** — removed `display:flex` from `<td>`, moved to `<span>`
+- [x] **Phase 1-3 enrichment verified** — size_pct, fill_vel, order_flow, crush_prob all 88/88 in local scan
 - [x] GHA workflow fix: deploy now triggers reliably after scan via workflow_run
 - [x] FMP stable API migration (`/v3/` → `/stable/`)
 - [x] Beta column (color-coded: gris < 1.3 / orange ≥ 1.3 / rouge ≥ 2)
