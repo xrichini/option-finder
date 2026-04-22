@@ -649,26 +649,28 @@ async def get_underlying_price(symbol: str):
 
 
 @hybrid_router.get("/trends/order-flow")
-async def get_order_flow_trends(symbols: str = Query(..., description="Comma-separated symbol list")):
+async def get_order_flow_trends(
+    symbols: str = Query(..., description="Comma-separated symbol list")
+):
     """
     Get 7-day order flow strength trends for sparkline visualization.
-    
+
     Args:
         symbols: Comma-separated OCC option symbols (e.g., "AAPL240420C00150000,AAPL240420P00150000")
-    
+
     Returns:
         {symbol: [flow_strength_d1, ..., flow_strength_latest], ...}
     """
     try:
         from services.history_service import HistoryService
-        
+
         symbol_list = [s.strip() for s in symbols.split(",") if s.strip()]
         if not symbol_list:
             return {}
-        
+
         history_service = HistoryService()
         trends = history_service.get_order_flow_trends(symbol_list, window_days=7)
-        
+
         return {
             "success": True,
             "symbols": symbol_list,
@@ -682,26 +684,30 @@ async def get_order_flow_trends(symbols: str = Query(..., description="Comma-sep
 
 
 @hybrid_router.get("/trends/crush-probability")
-async def get_crush_probability_trends(symbols: str = Query(..., description="Comma-separated symbol list")):
+async def get_crush_probability_trends(
+    symbols: str = Query(..., description="Comma-separated symbol list")
+):
     """
     Get 7-day crush probability trends for sparkline visualization.
-    
+
     Args:
         symbols: Comma-separated OCC option symbols
-    
+
     Returns:
         {symbol: [crush_prob_d1, ..., crush_prob_latest], ...}
     """
     try:
         from services.history_service import HistoryService
-        
+
         symbol_list = [s.strip() for s in symbols.split(",") if s.strip()]
         if not symbol_list:
             return {}
-        
+
         history_service = HistoryService()
-        trends = history_service.get_crush_probability_trends(symbol_list, window_days=7)
-        
+        trends = history_service.get_crush_probability_trends(
+            symbol_list, window_days=7
+        )
+
         return {
             "success": True,
             "symbols": symbol_list,
@@ -712,7 +718,6 @@ async def get_crush_probability_trends(symbols: str = Query(..., description="Co
     except Exception as e:
         logger.error(f"❌ Error fetching crush probability trends: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
 
 
 # Tâche de screening hybride en arrière-plan

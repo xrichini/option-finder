@@ -861,13 +861,11 @@ class HistoryService:
         finally:
             con.close()
 
-    def get_order_flow_trends(
-        self, option_symbols: list, window_days: int = 7
-    ) -> dict:
+    def get_order_flow_trends(self, option_symbols: list, window_days: int = 7) -> dict:
         """
         Returns {option_symbol: [flow_strength_d1, ..., flow_strength_latest]}
         for sparkline visualization.
-        
+
         Ordered oldest → newest. Helps visualize order flow direction changes.
         """
         if not option_symbols or not os.path.exists(self.db_path):
@@ -910,7 +908,7 @@ class HistoryService:
         """
         Returns {option_symbol: [crush_prob_d1, ..., crush_prob_latest]}
         for sparkline visualization.
-        
+
         Ordered oldest → newest. Shows when IV crush risk is rising/falling.
         """
         if not option_symbols or not os.path.exists(self.db_path):
