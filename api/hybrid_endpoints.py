@@ -664,7 +664,9 @@ async def get_order_flow_trends(
             return {}
 
         history_service = HistoryService()
-        trends = history_service.get_order_flow_trends(symbol_list, window_days=window_days)
+        trends = history_service.get_order_flow_trends(
+            symbol_list, window_days=window_days
+        )
 
         return {
             "success": True,
