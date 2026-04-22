@@ -640,7 +640,7 @@
                 toggleFilterButtons(true);
                 updateFilterBadges();
                 setStatus('idle', 'Restored');
-                _loadSparklines();
+                _fetchTrendData();
                 _startLiveRefresh();    // resume live quotes after restore
                 return true;
             } catch(e) {
@@ -1024,7 +1024,8 @@
 
         async function _fetchTrendData() {
             if (!filteredOptions || filteredOptions.length === 0) return;
-            const symbols = filteredOptions.map(o => o.option_symbol).filter(s => s);
+            // Use underlying symbols (deduplicated) — options expire weekly but underlying persists
+            const symbols = [...new Set(filteredOptions.map(o => o.underlying_symbol).filter(s => s))];
             if (symbols.length === 0) return;
             try {
                 const flowRes = await fetch(`/api/hybrid/trends/order-flow?symbols=${symbols.join(',')}`);
@@ -1062,8 +1063,8 @@
                 
                 if (ordFlowCellIdx >= 0 && ordFlowCellIdx < cells.length) {
                     const ordFlowCell = cells[ordFlowCellIdx];
-                    if (_flowTrendCache[opt.option_symbol]) {
-                        const flowSparkline = _makeFlowTrendSparkline(_flowTrendCache[opt.option_symbol]);
+                    if (_flowTrendCache[opt.underlying_symbol]) {
+                        const flowSparkline = _makeFlowTrendSparkline(_flowTrendCache[opt.underlying_symbol]);
                         if (!ordFlowCell.innerHTML.includes('svg')) {
                             ordFlowCell.innerHTML += flowSparkline;
                         }
@@ -1072,8 +1073,8 @@
                 
                 if (crushProbCellIdx >= 0 && crushProbCellIdx < cells.length) {
                     const crushProbCell = cells[crushProbCellIdx];
-                    if (_crushTrendCache[opt.option_symbol]) {
-                        const crushSparkline = _makeCrushTrendSparkline(_crushTrendCache[opt.option_symbol]);
+                    if (_crushTrendCache[opt.underlying_symbol]) {
+                        const crushSparkline = _makeCrushTrendSparkline(_crushTrendCache[opt.underlying_symbol]);
                         if (!crushProbCell.innerHTML.includes('svg')) {
                             crushProbCell.innerHTML += crushSparkline;
                         }
