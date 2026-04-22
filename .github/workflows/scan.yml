@@ -141,7 +141,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/latest_scan.json
+          git add data/latest_scan.json data/options_history.db
           git diff --staged --quiet || git commit -m "chore: merged scan results (nasdaq100+sp500+dow30) $(date -u '+%Y-%m-%dT%H:%MZ')"
           git push
         env:
