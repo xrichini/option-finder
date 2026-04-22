@@ -1086,6 +1086,7 @@
             const type = (opt.option_type || '').toLowerCase();
             const isCall = type === 'call';
             const rowClass = isCall ? 'row-call' : 'row-put';
+            const optSym = opt.option_symbol || '';
 
             const sym     = opt.underlying_symbol || opt.underlying || opt.symbol || 'N/A';
             const strike  = Number(opt.strike || 0);
@@ -1239,8 +1240,6 @@
             const sideBadge = isCall
                 ? `<span class="badge-call">Call</span>`
                 : `<span class="badge-put">Put</span>`;
-
-            const optSym = opt.option_symbol || '';
 
             // score pill
             let scoreCls = score >= 70 ? 'score-high' : (score >= 40 ? 'score-med' : 'score-low');
