@@ -861,18 +861,18 @@ class HistoryService:
         finally:
             con.close()
 
-    def get_order_flow_trends(self, option_symbols: list, window_days: int = 7) -> dict:
+    def get_order_flow_trends(
+        self, underlying_symbols: list, window_days: int = 7
+    ) -> dict:
         """
-        Returns {option_symbol: [flow_strength_d1, ..., flow_strength_latest]}
-        for sparkline visualization.
-
-        Ordered oldest → newest. Helps visualize order flow direction changes.
+        Returns {underlying: [avg_flow_strength_d1, ..., avg_flow_strength_latest]}
+        grouped by underlying symbol and scan day, for sparkline visualization.
         """
-        if not option_symbols or not os.path.exists(self.db_path):
+        if not underlying_symbols or not os.path.exists(self.db_path):
             return {}
 
         cutoff = (datetime.now() - timedelta(days=window_days)).strftime("%Y-%m-%d")
-        placeholders = ",".join("?" * len(option_symbols))
+        placeholders = ",".join("?" * len(underlying_symbols))
 
         con = self._open()
         if con is None:
@@ -880,14 +880,15 @@ class HistoryService:
         try:
             rows = con.execute(
                 f"""
-                SELECT option_symbol, scan_date, order_flow_strength
+                SELECT underlying, DATE(scan_date), AVG(order_flow_strength)
                 FROM option_history
-                WHERE option_symbol IN ({placeholders})
+                WHERE underlying IN ({placeholders})
                   AND scan_date >= ?
                   AND order_flow_strength > 0
-                ORDER BY option_symbol, scan_date ASC
+                GROUP BY underlying, DATE(scan_date)
+                ORDER BY underlying, scan_date ASC
                 """,
-                option_symbols + [cutoff],
+                underlying_symbols + [cutoff],
             ).fetchall()
 
             result: dict = {}
@@ -903,19 +904,19 @@ class HistoryService:
             con.close()
 
     def get_crush_probability_trends(
-        self, option_symbols: list, window_days: int = 7
+        self, underlying_symbols: list, window_days: int = 7
     ) -> dict:
         """
-        Returns {option_symbol: [crush_prob_d1, ..., crush_prob_latest]}
-        for sparkline visualization.
+        Returns {underlying: [crush_ratio_d1, ..., crush_ratio_latest]}
+        grouped by underlying symbol and scan day.
 
-        Ordered oldest → newest. Shows when IV crush risk is rising/falling.
+        Crush ratio = implied_volatility / iv_52w_avg (>1 = elevated IV, high crush risk).
         """
-        if not option_symbols or not os.path.exists(self.db_path):
+        if not underlying_symbols or not os.path.exists(self.db_path):
             return {}
 
         cutoff = (datetime.now() - timedelta(days=window_days)).strftime("%Y-%m-%d")
-        placeholders = ",".join("?" * len(option_symbols))
+        placeholders = ",".join("?" * len(underlying_symbols))
 
         con = self._open()
         if con is None:
@@ -923,21 +924,25 @@ class HistoryService:
         try:
             rows = con.execute(
                 f"""
-                SELECT option_symbol, scan_date, crush_probability
+                SELECT underlying, DATE(scan_date),
+                       AVG(CASE WHEN iv_52w_avg > 0
+                                THEN ROUND(implied_volatility / iv_52w_avg * 100, 1)
+                                ELSE 0 END)
                 FROM option_history
-                WHERE option_symbol IN ({placeholders})
+                WHERE underlying IN ({placeholders})
                   AND scan_date >= ?
-                  AND crush_probability > 0
-                ORDER BY option_symbol, scan_date ASC
+                  AND implied_volatility > 0
+                GROUP BY underlying, DATE(scan_date)
+                ORDER BY underlying, scan_date ASC
                 """,
-                option_symbols + [cutoff],
+                underlying_symbols + [cutoff],
             ).fetchall()
 
             result: dict = {}
-            for sym, _date, crush_prob in rows:
+            for sym, _date, crush_ratio in rows:
                 if sym not in result:
                     result[sym] = []
-                result[sym].append(round(float(crush_prob), 1))
+                result[sym].append(round(float(crush_ratio), 1))
             return result
         except Exception as exc:
             logger.debug(f"get_crush_probability_trends: {exc}")

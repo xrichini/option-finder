@@ -69,9 +69,17 @@ app.add_middleware(
 )
 
 # Servir les fichiers statiques (CSS, JS, images)
+from pathlib import Path
+
+_base_dir = Path(__file__).parent
 try:
-    app.mount("/static", StaticFiles(directory="ui/static"), name="static")
-    app.mount("/ui", StaticFiles(directory="ui"), name="ui")
+    app.mount(
+        "/static",
+        StaticFiles(directory=str(_base_dir / "ui" / "static")),
+        name="static",
+    )
+    app.mount("/ui", StaticFiles(directory=str(_base_dir / "ui")), name="ui")
+    app.mount("/data", StaticFiles(directory=str(_base_dir / "data")), name="data")
 except Exception as e:
     logger.warning(f"Could not mount static files: {e}")
 
