@@ -650,16 +650,11 @@ async def get_underlying_price(symbol: str):
 
 @hybrid_router.get("/trends/order-flow")
 async def get_order_flow_trends(
-    symbols: str = Query(..., description="Comma-separated symbol list")
+    symbols: str = Query(..., description="Comma-separated symbol list"),
+    window_days: int = Query(30, ge=1, le=365, description="Lookback window in days"),
 ):
     """
-    Get 7-day order flow strength trends for sparkline visualization.
-
-    Args:
-        symbols: Comma-separated OCC option symbols (e.g., "AAPL240420C00150000,AAPL240420P00150000")
-
-    Returns:
-        {symbol: [flow_strength_d1, ..., flow_strength_latest], ...}
+    Get order flow strength trends for sparkline visualization.
     """
     try:
         from services.history_service import HistoryService
@@ -669,13 +664,13 @@ async def get_order_flow_trends(
             return {}
 
         history_service = HistoryService()
-        trends = history_service.get_order_flow_trends(symbol_list, window_days=7)
+        trends = history_service.get_order_flow_trends(symbol_list, window_days=window_days)
 
         return {
             "success": True,
             "symbols": symbol_list,
             "trends": trends,
-            "window_days": 7,
+            "window_days": window_days,
             "timestamp": datetime.now().isoformat(),
         }
     except Exception as e:
@@ -685,16 +680,11 @@ async def get_order_flow_trends(
 
 @hybrid_router.get("/trends/crush-probability")
 async def get_crush_probability_trends(
-    symbols: str = Query(..., description="Comma-separated symbol list")
+    symbols: str = Query(..., description="Comma-separated symbol list"),
+    window_days: int = Query(30, ge=1, le=365, description="Lookback window in days"),
 ):
     """
-    Get 7-day crush probability trends for sparkline visualization.
-
-    Args:
-        symbols: Comma-separated OCC option symbols
-
-    Returns:
-        {symbol: [crush_prob_d1, ..., crush_prob_latest], ...}
+    Get crush probability trends for sparkline visualization.
     """
     try:
         from services.history_service import HistoryService
@@ -705,14 +695,14 @@ async def get_crush_probability_trends(
 
         history_service = HistoryService()
         trends = history_service.get_crush_probability_trends(
-            symbol_list, window_days=7
+            symbol_list, window_days=window_days
         )
 
         return {
             "success": True,
             "symbols": symbol_list,
             "trends": trends,
-            "window_days": 7,
+            "window_days": window_days,
             "timestamp": datetime.now().isoformat(),
         }
     except Exception as e:
