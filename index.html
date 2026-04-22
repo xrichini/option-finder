@@ -979,44 +979,56 @@
         }
 
         function _makeFlowTrendSparkline(values) {
-            if (!values || values.length < 2) return '';
-            const W = 36, H = 12, PAD = 1;
+            if (!values || values.length === 0) return '';
+            const W = 36, H = 12, PAD = 2;
             const min  = Math.min(...values);
             const max  = Math.max(...values);
             const rng  = max - min || 1;
-            const pts  = values.map((v, i) => {
-                const x = PAD + (i / (values.length - 1)) * (W - 2 * PAD);
-                const y = (H - PAD) - ((v - min) / rng) * (H - 2 * PAD);
-                return x.toFixed(1) + ',' + y.toFixed(1);
-            }).join(' ');
             const last  = values[values.length - 1];
             const first = values[0];
             const trend = last - first;
             const color = trend >  5 ? '#22a84a'
                         : trend < -5 ? '#dc2626'
                         : '#9ca3af';
+            if (values.length === 1) {
+                const cy = (H / 2).toFixed(1);
+                return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="margin-left:2px">` +
+                       `<circle cx="${W/2}" cy="${cy}" r="2" fill="${color}"/>` +
+                       `</svg>`;
+            }
+            const pts  = values.map((v, i) => {
+                const x = PAD + (i / (values.length - 1)) * (W - 2 * PAD);
+                const y = (H - PAD) - ((v - min) / rng) * (H - 2 * PAD);
+                return x.toFixed(1) + ',' + y.toFixed(1);
+            }).join(' ');
             return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="margin-left:2px">` +
                    `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1" stroke-linejoin="round"/>` +
                    `</svg>`;
         }
 
         function _makeCrushTrendSparkline(values) {
-            if (!values || values.length < 2) return '';
-            const W = 36, H = 12, PAD = 1;
+            if (!values || values.length === 0) return '';
+            const W = 36, H = 12, PAD = 2;
             const min  = Math.min(...values);
             const max  = Math.max(...values);
             const rng  = max - min || 1;
-            const pts  = values.map((v, i) => {
-                const x = PAD + (i / (values.length - 1)) * (W - 2 * PAD);
-                const y = (H - PAD) - ((v - min) / rng) * (H - 2 * PAD);
-                return x.toFixed(1) + ',' + y.toFixed(1);
-            }).join(' ');
             const last  = values[values.length - 1];
             const first = values[0];
             const trend = last - first;
             const color = trend >  5 ? '#dc2626'
                         : trend < -5 ? '#22a84a'
                         : '#9ca3af';
+            if (values.length === 1) {
+                const cy = (H / 2).toFixed(1);
+                return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="margin-left:2px">` +
+                       `<circle cx="${W/2}" cy="${cy}" r="2" fill="${color}"/>` +
+                       `</svg>`;
+            }
+            const pts  = values.map((v, i) => {
+                const x = PAD + (i / (values.length - 1)) * (W - 2 * PAD);
+                const y = (H - PAD) - ((v - min) / rng) * (H - 2 * PAD);
+                return x.toFixed(1) + ',' + y.toFixed(1);
+            }).join(' ');
             return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="margin-left:2px">` +
                    `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1" stroke-linejoin="round"/>` +
                    `</svg>`;
@@ -1028,12 +1040,12 @@
             const symbols = [...new Set(filteredOptions.map(o => o.underlying_symbol).filter(s => s))];
             if (symbols.length === 0) return;
             try {
-                const flowRes = await fetch(`/api/hybrid/trends/order-flow?symbols=${symbols.join(',')}`);
+                const flowRes = await fetch(`/api/hybrid/trends/order-flow?symbols=${symbols.join(',')}&window_days=30`);
                 if (flowRes.ok) {
                     const flowData = await flowRes.json();
                     if (flowData.trends) _flowTrendCache = flowData.trends;
                 }
-                const crushRes = await fetch(`/api/hybrid/trends/crush-probability?symbols=${symbols.join(',')}`);
+                const crushRes = await fetch(`/api/hybrid/trends/crush-probability?symbols=${symbols.join(',')}&window_days=30`);
                 if (crushRes.ok) {
                     const crushData = await crushRes.json();
                     if (crushData.trends) _crushTrendCache = crushData.trends;
@@ -1207,10 +1219,12 @@
             } else if (flowDir === 'bearish') {
                 flowBadgeHtml = '<span style="background:#5a2a2a;color:#feb2b2;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">📉 R</span>';
             }
-            if (_flowTrendCache[optSym]) {
-                flowSparkline = _makeFlowTrendSparkline(_flowTrendCache[optSym]);
+            if (_flowTrendCache[sym]) {
+                flowSparkline = _makeFlowTrendSparkline(_flowTrendCache[sym]);
             }
-            const flowBadgeWithTrend = flowBadgeHtml + flowSparkline;
+            const flowBadgeWithTrend = flowSparkline
+                ? `<span style="display:inline-flex;align-items:center;gap:2px">${flowBadgeHtml}${flowSparkline}</span>`
+                : flowBadgeHtml;
 
             // Phase 3: Crush Probability Badge + Sparkline
             const crushProb = Number(opt.crush_probability || 0);
@@ -1228,10 +1242,12 @@
             } else if (crushProb > 0) {
                 crushProbBadgeHtml = '<span style="background:#68d391;color:#000;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">🟢 ' + crushProb.toFixed(0) + '%</span>';
             }
-            if (_crushTrendCache[optSym]) {
-                crushSparkline = _makeCrushTrendSparkline(_crushTrendCache[optSym]);
+            if (_crushTrendCache[sym]) {
+                crushSparkline = _makeCrushTrendSparkline(_crushTrendCache[sym]);
             }
-            const crushBadgeWithTrend = crushProbBadgeHtml + crushSparkline;
+            const crushBadgeWithTrend = crushSparkline
+                ? `<span style="display:inline-flex;align-items:center;gap:2px">${crushProbBadgeHtml}${crushSparkline}</span>`
+                : crushProbBadgeHtml;
 
             // Timestamp
             const ts = opt.timestamp ? new Date(opt.timestamp) : null;
@@ -1313,8 +1329,8 @@
                 <td style="text-align:center">${sizeBadgeHtml}</td>
                 <td style="text-align:center" title="Current IV / 52w Avg (${ivCrush.toFixed(2)}x)">${ivCrushBadgeHtml}</td>
                 <td style="text-align:center" title="${fillVel.toFixed(0)} contracts/min">${fillVelBadgeHtml}</td>
-                <td style="text-align:center;display:flex;align-items:center;justify-content:center;gap:3px" title="Order Flow: ${flowDir} (${flowStrength.toFixed(0)})">${flowBadgeWithTrend}</td>
-                <td style="text-align:center;display:flex;align-items:center;justify-content:center;gap:3px" title="IV Crush Probability: ${crushProb.toFixed(1)}% (${crushCat})">${crushBadgeWithTrend}</td>
+                <td style="text-align:center" title="Order Flow: ${flowDir} (${flowStrength.toFixed(0)})">${flowBadgeWithTrend}</td>
+                <td style="text-align:center" title="IV Crush Probability: ${crushProb.toFixed(1)}% (${crushCat})">${crushBadgeWithTrend}</td>
                 <td data-field="score">${scoreCell}</td>
             </tr>`;
         }
