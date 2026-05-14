@@ -534,6 +534,10 @@
                                : ageMin < 60    ? (' · ' + ageMin + 'min ago')
                                                  : (' · ' + Math.round(ageMin / 60) + 'h ago');
                 const staleWarn = ageMin !== null && ageMin > 120;
+                const scanDateLabel = ts ? ts.toLocaleString('en-US', {
+                    month:'short', day:'numeric', hour:'2-digit', minute:'2-digit',
+                    hour12: false, timeZoneName: 'short'
+                }) : '';
 
                 let opps = data.opportunities || [];
 
@@ -543,10 +547,12 @@
                 if (tickerSearch) filteredOptions = filteredOptions.filter(
                     o => (o.underlying_symbol || '').toUpperCase().startsWith(tickerSearch));
 
-                document.getElementById('scanMeta').textContent =
+                document.getElementById('scanMeta').innerHTML =
                     currentOptions.length + ' results · ' +
-                    (data.universes ? data.universes.join('+') : 'nasdaq100') + ageLabel +
-                    (staleWarn ? ' ⚠️ stale' : '');
+                    (data.universes ? data.universes.join('+') : 'nasdaq100') +
+                    (scanDateLabel ? ' · <span title="Scan timestamp" style="color:#63b3ed">🕐 ' + scanDateLabel + '</span>' : '') +
+                    ageLabel +
+                    (staleWarn ? ' <span style="color:#fc8181">⚠️ stale</span>' : '');
 
                 renderOptions();
                 toggleFilterButtons(true);
