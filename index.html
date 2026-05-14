@@ -533,7 +533,13 @@
                 const ageLabel = ageMin === null ? ''
                                : ageMin < 60    ? (' · ' + ageMin + 'min ago')
                                                  : (' · ' + Math.round(ageMin / 60) + 'h ago');
-                const staleWarn = ageMin !== null && ageMin > 120;
+                // Stale only matters during market scan hours (Mon-Fri 14:00-21:30 UTC)
+                // Outside those hours, old data is expected — don't alarm the user
+                const _nowUtc  = new Date();
+                const _dow     = _nowUtc.getUTCDay();   // 0=Sun, 6=Sat
+                const _utcH    = _nowUtc.getUTCHours() + _nowUtc.getUTCMinutes() / 60;
+                const _inMarket = _dow >= 1 && _dow <= 5 && _utcH >= 14 && _utcH < 21.5;
+                const staleWarn = _inMarket && ageMin !== null && ageMin > 30;
                 const scanDateLabel = ts ? ts.toLocaleString('en-US', {
                     month:'short', day:'numeric', hour:'2-digit', minute:'2-digit',
                     hour12: false, timeZoneName: 'short'
