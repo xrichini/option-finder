@@ -9,6 +9,7 @@ on:
     branches: [main]
     paths:
       - "ui/**"
+      - "data/latest_scan.json"
   workflow_dispatch:
 
 jobs:
