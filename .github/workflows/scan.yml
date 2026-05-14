@@ -72,7 +72,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: scan-${{ matrix.universe }}
-          path: data/scan_${{ matrix.universe }}.json
+          path: |
+            data/scan_${{ matrix.universe }}.json
+            data/options_history.db
           retention-days: 1
 
   merge-and-deploy:
@@ -91,30 +93,62 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           pattern: scan-*
-          path: data/
-          merge-multiple: true
+          path: artifacts/
 
-      - name: Merge scan results
+      - name: Merge history DBs + scan results
         run: |
           python3 << 'EOF'
-          import json
+          import json, sqlite3, shutil
           from pathlib import Path
           from datetime import datetime
-          
+
+          # ── Merge options_history.db from all 3 universes ──────────────────
+          base_db = Path("data/options_history.db")
+          con = sqlite3.connect(str(base_db))
+          cur = con.cursor()
+          total_inserted = 0
+          for universe in ["nasdaq100", "sp500", "dow30"]:
+              src = Path(f"artifacts/scan-{universe}/data/options_history.db")
+              if not src.exists():
+                  print(f"⚠️  DB not found for {universe}: {src}")
+                  continue
+              cur.execute(f"ATTACH DATABASE '{src}' AS src_{universe}")
+              cur.execute(f"""
+                  INSERT OR REPLACE INTO option_history
+                  (option_symbol, underlying, scan_date, volume_1d, open_interest,
+                   last_price, whale_score, vol_oi_ratio, implied_volatility, strike,
+                   option_type, volume_30d_avg, size_percentile, fill_velocity,
+                   iv_52w_avg, order_flow_strength, volatility_smile_width)
+                  SELECT option_symbol, underlying, scan_date, volume_1d, open_interest,
+                         last_price, whale_score, vol_oi_ratio, implied_volatility, strike,
+                         option_type, volume_30d_avg, size_percentile, fill_velocity,
+                         iv_52w_avg, order_flow_strength, volatility_smile_width
+                  FROM src_{universe}.option_history
+              """)
+              n = cur.rowcount
+              total_inserted += n
+              print(f"✅ Merged {n} rows from {universe} DB")
+              cur.execute(f"DETACH DATABASE src_{universe}")
+          con.commit()
+          cur.execute("SELECT COUNT(*), COUNT(DISTINCT scan_date) FROM option_history")
+          rows, days = cur.fetchone()
+          con.close()
+          print(f"📊 DB final: {rows} rows across {days} distinct scan dates (+{total_inserted} upserted)")
+
+          # ── Merge scan JSON results ─────────────────────────────────────────
           merged = {
             "timestamp": datetime.now().isoformat(),
             "universes": ["nasdaq100", "sp500", "dow30"],
             "opportunities": []
           }
-          
+
           for universe in ["nasdaq100", "sp500", "dow30"]:
-            path = Path(f"data/scan_{universe}.json")
+            path = Path(f"artifacts/scan-{universe}/data/scan_{universe}.json")
             if path.exists():
               try:
                 with open(path) as f:
                   data = json.load(f)
                   opps = data.get("opportunities", [])
-                  # Add universe field to each opportunity
                   for opp in opps:
                     opp["universe"] = universe
                   merged["opportunities"].extend(opps)
