@@ -168,7 +168,13 @@ jobs:
               deduped.append(opp)
           
           merged["opportunities"] = deduped
-          print(f"📊 Total: {len(deduped)} unique opportunities after dedup")
+          total = len(deduped)
+          print(f"📊 Total: {total} unique opportunities after dedup")
+
+          # Guard: don't overwrite a good scan with empty results
+          if total == 0:
+            print("⚠️  0 opportunities — skipping write to preserve last good scan.")
+            import sys; sys.exit(0)
           
           # Write merged results
           with open("data/latest_scan.json", "w") as f:

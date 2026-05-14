@@ -1,7 +1,7 @@
 # 🎯 Trade Decision Workflow - From Scan to Action
 
-**Date**: April 2026  
-**Status**: Current (Multi-Universe Scanning)  
+**Date**: May 2026  
+**Status**: Current (Multi-Universe Scanning + Phase 1-3 Enrichment)  
 **Challenge**: Many tickers score 100/100 — need multi-stage filtering to differentiate
 
 ---
@@ -21,12 +21,13 @@
 ## 📊 Stage 1: Scan Results Overview
 
 ### What Happens
-- **Frequency**: Every 15 minutes during market hours (9:30 AM - 4 PM ET)
-- **Coverage**: 630 total opportunities across 3 universes
-  - NASDAQ 100: ~80-90 options
-  - S&P 500: ~150-200 options
-  - DOW 30: ~20-30 options
+- **Frequency**: Every 15 minutes during market hours (9:30 AM - 4 PM ET), Mon-Fri
+- **Coverage**: 30-80 unique opportunities across 3 universes (after dedup by option_symbol)
+  - NASDAQ 100: ~20-30 options
+  - S&P 500: ~25-40 options
+  - DOW 30: ~10-20 options
 - **Output**: `data/latest_scan.json` (merged, deduplicated, sorted by whale_score DESC)
+- **Enrichment**: each opportunity is enriched with 6 historical signal columns from `options_history.db`
 
 ### What You See in UI
 ```
@@ -229,42 +230,42 @@ START: You have a 100/100 whale option
 
 ## 💡 Practical Example Walkthrough
 
-### Scenario: You see these three at 100.0 score
+### Scenario: Top results from May 14, 2026 scan
 
-| # | Symbol | Vol | OI Change | Put/Call | Beta | Insider | Earnings |
-|---|---|---|---|---|---|---|---|
-| 1 | MSTR | 24,052 | +45% | 0.45 (Call heavy) | 1.8 | 🟢 BULLISH | ⚪ None |
-| 2 | NVDA | 18,200 | -8% | 0.88 (Neutral) | 1.2 | ⚪ NEUTRAL | ⚪ None |
-| 3 | AAPL | 6,800 | +12% | 1.1 (Neutral) | 0.9 | 🔴 BEARISH | ⚡ In 4d |
+| # | Symbol | Vol | VOL/OI | MON$ | IVCRUSH | FILLVEL | CRUSHPROB | Beta | Insider | Earnings |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | NVDA $235c | 204,648 | 2.45x | ATM | LOW | LOW | 5% | 2.24 | ⚪ | ⚪ |
+| 2 | AVGO $450c | 35,194 | 2.28x | OTM | LOW | LOW | 26% | — | ⚪ | ⚪ |
+| 3 | TSLA $445c | 34,011 | 2.70x | ATM | LOW | LOW | 1% | 1.79 | ⚪ | ⚪ |
 
 ### Analysis
 
-**MSTR**: 
-- ✅ Volume 24k (high)
-- ✅ OI +45% (strong buildup)
-- ✅ Call accumulation (Put/Call 0.45)
-- ⚠️ Beta 1.8 (volatile)
-- ✅ Bullish insider
-- ✅ No earnings
-- **→ RANK #1**: Strong speculative whale play, high conviction
+**NVDA $235 Call (DTE 1d)**:
+- ✅ Volume 204k (massive — exceptional flow)
+- ✅ VOL/OI 2.45x (strong flow vs open interest)
+- ✅ MON$ = ATM (max gamma zone)
+- ✅ IVCRUSH = LOW (IV not inflated)
+- ✅ CRUSHPROB 5% (almost no crush risk)
+- ⚠️ FILLVEL = LOW (but volume is huge → acceptable)
+- ⚠️ DTE = 1 day (high gamma risk, size small)
+- **→ RANK #1**: Institutional flow evident. Small size, manage gamma.
 
-**NVDA**:
-- ✅ Volume 18k (good)
-- ❌ OI -8% (slightly unwinding)
-- ⚪ Neutral Put/Call
-- ✅ Beta 1.2 (moderate)
-- ⚪ No insider signal
-- ✅ No earnings
-- **→ RANK #2**: Good volume, but lacking momentum (OI down)
+**TSLA $445 Call (DTE 1d)**:
+- ✅ Volume 34k (strong)
+- ✅ VOL/OI 2.70x (highest ratio — most intense flow)
+- ✅ MON$ = ATM
+- ✅ IVCRUSH = LOW
+- ✅ CRUSHPROB 1% (safest of the 3)
+- ✅ Beta 1.79 (manageable)
+- **→ RANK #2**: Best ratio, cleanest signals, lowest crush risk.
 
-**AAPL**:
-- ⚠️ Volume 6.8k (low)
-- ✅ OI +12% (small buildup)
-- ⚪ Neutral Put/Call
-- ✅ Beta 0.9 (stable)
-- ❌ Bearish insider
-- ⚠️ Earnings in 4 days (IV risk)
-- **→ RANK #3** or **SKIP**: Low volume, insider bearish, earnings risk
+**AVGO $450 Call (DTE 1d)**:
+- ✅ Volume 35k (good)
+- ✅ VOL/OI 2.28x
+- 🟡 MON$ = OTM (less directional conviction)
+- ✅ IVCRUSH = LOW
+- ⚠️ CRUSHPROB 26% (slightly elevated vs TSLA)
+- **→ RANK #3**: Good but OTM reduces conviction vs ATM peers.
 
 ---
 
@@ -273,68 +274,48 @@ START: You have a 100/100 whale option
 When you have a 100.0 score option, check in order (top to bottom = priority):
 
 ```
-☐ Volume > 10,000?           → (Most important — liquidity)
-☐ VOL/OI ratio > 0.5?        → (High flow intensity, new positions)
-☐ Delta 0.4 - 0.7?           → (Not too OTM, good probability)
-☐ Mostly CALLs (not PUTs)?   → (Bullish sentiment)
-☐ IVR > 50%?                 → (Elevated volatility context)
-☐ No ⚡ earnings?            → (Avoid IV crush risk)
-☐ Beta < 2.0?                → (Risk manageable)
-☐ Insider BULLISH or ⚪?     → (No insider selling)
+☐ Volume > 10,000?              → (Most important — liquidity)
+☐ VOL/OI ratio > 0.5?           → (High flow intensity, new positions)
+☐ Delta 0.4 - 0.7?              → (Not too OTM, good probability)
+☐ MON$ = ATM or ITM?            → (Avoid FAR OTM lottery tickets)
+☐ IVCRUSH = LOW?                → (IV not overinflated vs history)
+☐ CRUSHPROB < 40%?             → (Low post-event IV collapse risk)
+☐ FILLVEL = HIGH or NORMAL?     → (Execution pace signal)
+☐ ORDFLOW > 50?                 → (Bullish flow direction, if DB has history)
+☐ SIZE% = TOP 25% or better?    → (Volume is above average for this contract)
+☐ Mostly CALLs (not PUTs)?      → (Bullish sentiment)
+☐ No ⚡ earnings?               → (Avoid IV crush risk)
+☐ Beta < 2.0?                   → (Risk manageable)
+☐ Insider BULLISH or ⚪?        → (No insider selling)
 
 **Scoring**:
-- 7+ checks → 🟢 **STRONG BUY** (high conviction)
-- 5-6 checks → 🟡 **GOOD** (tradeable)
-- 3-4 checks → ⚪ **NEUTRAL** (watch, don't chase)
-- < 3 checks → 🔴 **SKIP**
+- 10+ checks → 🟢 **STRONG BUY** (high conviction)
+- 7-9 checks  → 🟡 **GOOD** (tradeable)
+- 4-6 checks  → ⚪ **NEUTRAL** (watch, don't chase)
+- < 4 checks  → 🔴 **SKIP**
 ```
 
 ---
 
 ## 📊 Practical Multi-Column Analysis
 
-### Example Trade Analysis (From Your Screenshot)
+### Example Trade Analysis (NVDA $235c, May 14, 2026)
 
-Looking at top NVDA/AAPL/MSFT calls visible:
-
-**NVDA $130 Call (14 DTE)**
 ```
-Volume:    84,691 ✅ (massive, priority flow)
-VOL/OI:    9.22x   ✅ (extreme — 900% of daily OI!)
-Delta:     0.66    ✅ (strong bullish, 66% prob ITM)
-IVR:       23.3%   🟡 (IV is compressed, low vol context)
-Beta:      2.33    ⚠️ (high risk, large swings)
-DTE:       14d     ✅ (sweet spot timing)
+Volume:      204,648 ✅ (exceptional — likely block trades)
+VOL/OI:        2.45x ✅ (strong flow vs open interest)
+MON$:           ATM  ✅ (max gamma zone)
+IVCRUSH:        LOW  ✅ (IV not elevated vs 52w avg)
+CRUSHPROB:       5%  ✅ (no IV crush risk)
+FILLVEL:        LOW  ⚠️  (slow fill velocity, but volume compensates)
+ORDFLOW:         LO  ⚪ (neutral — DB still accumulating per-contract history)
+SIZE%:          25%  ⚪ (DB still building 30d history → will improve)
+Delta:          0.17 ⚠️ (low — OTM, high leverage play)
+DTE:              1d ⚠️ (1 day = high gamma, size small!)
+Beta:           2.24 ⚠️ (volatile — reduce size)
 
-Decision: BUY (high conviction flow, ignore low IV — it's just context)
-Sizing: Smaller position (high beta)
-```
-
-**AAPL $270 Call (14 DTE)**
-```
-Volume:    37,777  ✅ (good, 2nd tier)
-VOL/OI:    5.00x   ✅ (strong, 500% of daily OI)
-Delta:     0.52    ✅ (near ATM, good risk/reward)
-IVR:       18.1%   🔴 (very compressed IV)
-Beta:      1.11    ✅ (low beta, stable)
-DTE:       14d     ✅ (sweet spot)
-Insider:   BULLISH ✅ (extra confirmation)
-
-Decision: BUY (lower risk than NVDA, good mechanics)
-Sizing: Normal position
-```
-
-**MSFT $425 Call (14 DTE)**
-```
-Volume:    10,908  ✅ (minimum threshold met)
-VOL/OI:    2.91x   ⚪ (moderate, 291% of daily OI)
-Delta:     0.46    ✅ (near ATM)
-IVR:       20.6%   🔴 (compressed)
-Beta:      1.11    ✅ (low beta)
-DTE:       14d     ✅ (sweet spot)
-
-Decision: HOLD/WATCH (not as hot as top 2, but still valid)
-Wait for better entry if others fill first
+Decision: BUY small (exceptional flow, manage 1-day gamma aggressively)
+Sizing: 1-2 contracts max
 ```
 
 ---
@@ -370,28 +351,124 @@ Wait for better entry if others fill first
 | **Side** | 📈 Call or 📉 Put | Bullish/bearish signal |
 | **Strike** | Exercise price | OTM/ATM/ITM analysis |
 | **Expiration** | DTE (Days to Expiration) | 5-14 DTE optimal for whales |
+| **Money** | Moneyness bar + label | See MON$ column below |
 | **Volume** | Daily trade count | **FIRST FILTER** |
 | **OI** | Open Interest | Check trend vs yesterday |
-| **Whale Score** | 0-100 signal strength | 100+ = many signals present |
-| **IV %** | Implied Volatility | High = expensive, avoid |
-| **IV Rank** | IV percentile (0-100) | 80+ = overpriced IV |
+| **VOL/OI** | Flow intensity ratio | > 1.0 = extreme activity |
 | **Delta** | Price sensitivity | 0.3-0.7 optimal |
-| **Theta** | Time decay per day | Positive = income strategy |
+| **Sizzle** | Vol/OI anomaly signal | Spikes = unusual flow |
+| **V5D** | 5-day volume trend | Trend direction |
+| **IV%** | Implied Volatility | High = expensive, avoid |
+| **IVR** | IV Rank (0-100%) | 80+ = overpriced IV |
+| **Chg%** | Price change % | Context |
+| **Stk Vol** | Underlying stock volume | Confirms direction |
+| **Sector** | Industry sector | Sector rotation context |
 | **Beta** | Stock volatility vs market | < 1.3 = institutional quality |
-| **Insider** | Recent insider trades | 🟢 = additional confirmation |
-| **Earnings** | ⚡ within 7 days | High IV, avoid if unsure |
+| **Insider** | Recent insider trades (30d) | 🟢 = additional confirmation |
+| **⚡** | Earnings within 7 days | High IV, avoid if unsure |
+| **MON$** | Moneyness quality badge | ITM/ATM/OTM — see below |
+| **SIZE%** | Size percentile vs 30d avg | > TOP 5% = unusual volume |
+| **IVCRUSH** | IV crush risk | LOW/HIGH vs 52w avg |
+| **FILLVEL** | Fill velocity | HIGH = institutional execution speed |
+| **ORDFLOW** | Order flow strength (0-100) | > 70 = strong bullish conviction |
+| **CRUSHPROB** | Probability of IV crush (%) | > 50% = dangerous if holding through event |
+| **Score** | Whale Score 0-100+ | 100 = many signals, use Stage 2 to rank |
+
+---
+
+## 🧪 Phase 1-3 Signal Columns — Detailed Guide
+
+These 6 columns are computed from `options_history.db` (historical scan data). They become more accurate as the DB accumulates daily scans.
+
+### MON$ — Moneyness Quality
+
+| Badge | Condition | Meaning | Score Impact |
+|---|---|---|---|
+| `ITM` 🟢 | Stock price > Strike (calls) | In-the-money, directional | +1% |
+| `ATM` 🔵 | Within ~2% of strike | Max gamma zone, most liquid | +3% |
+| `OTM` 🟡 | Slightly out of money | High leverage, less prob | — |
+| `FAR` 🔴 | > 10% OTM | Lottery ticket | -15% |
+
+**Rule**: Prefer `ATM` or `ITM` for institutional plays. `FAR` = avoid unless very high volume.
+
+---
+
+### SIZE% — Volume Size Percentile (30-Day)
+
+| Badge | Condition | Meaning |
+|---|---|---|
+| `TOP 1%` 🟢🟢 | Today's vol > 3× 30d avg | Exceptional — block trade likely |
+| `TOP 5%` 🟢 | Today's vol > 2× 30d avg | Strong unusual activity |
+| `TOP 25%` 🟡 | Today's vol > 1.3× 30d avg | Above normal |
+| `25%` ⚪ | Today's vol ≈ 30d avg | Normal activity |
+
+> **Note**: Currently shows `25%` for most contracts as DB is still building 30-day history. Will become meaningful after ~30 days of scans.
+
+---
+
+### IVCRUSH — IV Crush Risk
+
+| Badge | IV Ratio | Meaning |
+|---|---|---|
+| `LOW` 🟢 | current_IV < 52w avg | IV is compressed, safe to buy premium |
+| `NORMAL` 🟡 | 1.0 – 1.5× avg | Normal conditions |
+| `HIGH` 🔴 | current_IV > 1.5× avg | IV inflated — risk of crash post-event |
+
+**Rule**: Avoid `HIGH` unless you're playing the event itself. Perfect short premium setup.
+
+---
+
+### FILLVEL — Fill Velocity
+
+| Badge | Contracts/min | Meaning |
+|---|---|---|
+| `HIGH` 🟢 | > 500/min | Fast institutional execution |
+| `NORMAL` 🟡 | 100–500/min | Mixed |
+| `LOW` ⚪ | < 100/min | Slow retail flow |
+
+Calculated as `SUM(daily_volume) / 390 minutes`. Higher = faster fill pressure = urgency.
+
+---
+
+### ORDFLOW — Order Flow Strength (0–100)
+
+| Value | Badge | Meaning |
+|---|---|---|
+| 70–100 | `BULL` 🟢 | Strong bullish pressure trend over 30d |
+| 50–70 | `LO` 🟡 | Slightly bullish / neutral |
+| 30–50 | `BEAR` 🔴 | Bearish pressure |
+| = 50 | `LO` ⚪ | Neutral — insufficient per-contract history |
+
+> **Note**: Requires ≥3 scans of the **same option contract** to be meaningful. Long-dated options will accumulate this over weeks.
+
+---
+
+### CRUSHPROB — IV Crush Probability (%)
+
+| Value | Meaning | Action |
+|---|---|---|
+| > 70% | Very high crush risk | Sell premium / avoid buying IV |
+| 30–70% | Moderate risk | Monitor if near earnings |
+| < 30% | Low risk | Safe to buy options premium |
+
+Combines IV dispersion across strikes + IV/52w ratio + earnings catalyst.
+
+---
 
 ---
 
 ## ⚡ Pro Tips
 
-1. **Volume is King**: Filter `Vol >= 10k` first — eliminates 70% of noise
-2. **OI Momentum** beats raw OI: A 20% jump > a stable 100k OI
-3. **Insider Bullish** + **Call accumulation** = highest probability plays
-4. **Avoid earnings week**: Unless you specialize in IV crush plays
-5. **Watch the sparkline**: Red trend = avoid, even at 100.0 score
-6. **Tight spreads matter**: < 1% spread = real institutional interest
-7. **Multi-signal confirmation**: 100 = many signals, not "definitely buy"
+1. **Volume is King**: Filter `Vol >= 10k` first — eliminates most noise
+2. **MON$ ATM = best gamma**: ATM options have max sensitivity to price moves
+3. **IVCRUSH LOW + CRUSHPROB < 30%** = safe to buy premium (no overpriced IV)
+4. **ORDFLOW > 70** (when DB has history) = sustained institutional buying pressure
+5. **SIZE% TOP 5%** = this specific contract is getting unusually large attention today
+6. **Avoid FILLVEL LOW + CRUSHPROB HIGH** combo — slow execution into inflated IV
+7. **Watch the sparkline** in ORDFLOW column: trend direction > single data point
+8. **DTE 1-3d**: Extremely high gamma — use tiny size, expect large swings
+9. **DTE 7-21d**: Sweet spot for whale flow — best risk/reward ratio
+10. **Multi-signal confirmation**: 100 = many signals, not "definitely buy"
 
 ---
 
@@ -411,7 +488,11 @@ After picking your top 3-5 using this workflow:
 
 **Score clustering at 100.0**: This is intentional — whale_score detects signals, not quality. Use Stage 2-4 to rank.
 
-**Should I take ALL 100s?**: No. Stage 2 filters reduce 630 → 50-100 high quality. Stage 3 selects your top trades.
+**Should I take ALL 100s?**: No. Stage 2 filters reduce to ~10-20 high quality. Stage 3 selects your top trades.
 
-**What if OI changes tomorrow?**: That's fine. Momentum was yesterday. Check today's update every 30 min.
+**What if ORDFLOW shows LO for everything?**: Normal — requires ≥3 scans of the same contract. Will improve as DB builds daily history.
+
+**SIZE% shows 25% for everything?**: Expected while DB accumulates 30-day history. Will differentiate after ~30 trading days.
+
+**CRUSHPROB > 50% but earnings not flagged?**: High IV dispersion across strikes — the market is pricing in a big move even without a scheduled catalyst. Treat like an earnings play.
 
