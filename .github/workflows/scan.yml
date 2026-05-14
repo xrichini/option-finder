@@ -68,14 +68,12 @@ jobs:
             option-finder:latest \
             python scan_daemon.py --once --universe "$UNIVERSE" --output "$OUTPUT_FILE" $FORCE_FLAG
 
-      - name: Commit individual scan results
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/scan_*.json
-          git diff --staged --quiet || git commit -m "chore: scan results [${{ matrix.universe }}] $(date -u '+%Y-%m-%dT%H:%MZ')"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Upload scan results as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: scan-${{ matrix.universe }}
+          path: data/scan_${{ matrix.universe }}.json
+          retention-days: 1
 
   merge-and-deploy:
     name: Merge results & deploy
@@ -88,6 +86,13 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Download scan artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: scan-*
+          path: data/
+          merge-multiple: true
 
       - name: Merge scan results
         run: |
