@@ -59,12 +59,17 @@ app = FastAPI(
     redoc_url="/api/redoc",
 )
 
-# CORS pour développement
+# CORS — origins configurables via ALLOWED_ORIGINS (virgule-séparées) ou "*" par défaut
+import os as _os
+
+_allowed_origins = [
+    o.strip() for o in _os.getenv("ALLOWED_ORIGINS", "*").split(",") if o.strip()
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_origins=_allowed_origins,
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 

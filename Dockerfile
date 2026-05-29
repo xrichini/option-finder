@@ -35,11 +35,15 @@ COPY --from=builder /root/.local /root/.local
 
 # Copy application code
 COPY scan_daemon.py .
+COPY app.py .
+COPY start.py .
 COPY api ./api
 COPY services ./services
 COPY data ./data
 COPY db ./db
 COPY models ./models
+COPY ui ./ui
+COPY utils ./utils
 
 # Ensure pip packages are in PATH
 ENV PATH=/root/.local/bin:$PATH \

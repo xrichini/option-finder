@@ -371,12 +371,15 @@ def scheduled_job(universe: str, params: dict, force: bool = False):
     """
     Job exécuté par APScheduler.
     Ignore les déclenchements hors heures de marché sauf si --force.
+    Supporte universe="all" pour scanner nasdaq100 + sp500 + dow30 séquentiellement.
     """
     if not force and not is_market_open():
         now_et = datetime.now(MARKET_TZ)
         logger.info(f"💤 Marché fermé ({now_et:%H:%M ET, %A}) — scan ignoré.")
         return
-    do_scan(universe, params)
+    universes = ["nasdaq100", "sp500", "dow30"] if universe == "all" else [universe]
+    for u in universes:
+        do_scan(u, params)
 
 
 # ── CLI entry point ─────────────────────────────────────────────────────────
@@ -389,9 +392,9 @@ def main():
     )
     parser.add_argument(
         "--universe",
-        choices=["sp500", "nasdaq100", "dow30"],
+        choices=["sp500", "nasdaq100", "dow30", "all"],
         default=DEFAULT_UNIVERSE,
-        help="Univers à scanner",
+        help="Univers à scanner (all = nasdaq100+sp500+dow30 séquentiellement)",
     )
     parser.add_argument(
         "--interval",
@@ -446,7 +449,13 @@ def main():
                 "⏸️  Marché fermé — aucun scan lancé (utilise --force pour outrepasser)."
             )
             sys.exit(0)
-        do_scan(args.universe, params, args.output)
+        universes = (
+            ["nasdaq100", "sp500", "dow30"]
+            if args.universe == "all"
+            else [args.universe]
+        )
+        for u in universes:
+            do_scan(u, params, args.output)
         return
 
     # ── Mode daemon (APScheduler) ──────────────────────────────────────────────

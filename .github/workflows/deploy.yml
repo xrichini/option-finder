@@ -1,15 +1,16 @@
 name: Deploy GitHub Pages
 
 on:
-  workflow_run:
-    workflows: ["Option Scan (GHA)"]
-    types: [completed]
-    branches: [main]
-  push:
-    branches: [main]
-    paths:
-      - "ui/**"
-      - "data/latest_scan.json"
+  # triggers automatiques désactivés — UI servie directement par le VPS
+  # workflow_run:
+  #   workflows: ["Option Scan (GHA)"]
+  #   types: [completed]
+  #   branches: [main]
+  # push:
+  #   branches: [main]
+  #   paths:
+  #     - "ui/**"
+  #     - "data/latest_scan.json"
   workflow_dispatch:
 
 jobs:
